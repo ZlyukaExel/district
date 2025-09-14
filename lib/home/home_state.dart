@@ -1,17 +1,16 @@
 import 'package:district/dialogs/connect_dialog.dart';
+import 'package:district/dialogs/nickname_dialog.dart';
 import 'package:district/home/home_page.dart';
-import 'package:district/services/preferences_service.dart';
-import 'package:district/services/tcp_service.dart';
+import 'package:district/services/preferences.dart';
+import 'package:district/services/tcp_transport.dart';
 import 'package:district/widgets/connect_button.dart';
 import 'package:district/widgets/greeting_text.dart';
-import 'package:district/widgets/nickname_input.dart';
 import 'package:flutter/material.dart';
 
 class HomePageState extends State<HomePage> {
-  late String _port;
-  late String nickname;
-  final TcpService tcpService = TcpService();
-  final _inputController = TextEditingController();
+  String _port = '';
+  String nickname = "пользователь";
+  final TcpTransport transport = TcpTransport();
 
   @override
   void initState() {
@@ -21,20 +20,19 @@ class HomePageState extends State<HomePage> {
 
   @override
   void dispose() {
-    _inputController.dispose();
     super.dispose();
   }
 
   Future<void> _initializeApp() async {
-    await updateNickname();
+    updateNickname(await Preferences.getNickname());
     await startServerAndSavePort();
   }
 
   Future<void> startServerAndSavePort() async {
     try {
-      await tcpService.startServer((int port) {
+      await transport.startServer((int port) {
         setState(() {
-          _port = 'Порт сервера: $port';
+          _port = 'Ваш порт: $port';
         });
       });
     } catch (e) {
@@ -44,20 +42,9 @@ class HomePageState extends State<HomePage> {
     }
   }
 
-  Future<void> saveNickname(String nickname) async {
-    _inputController.clear();
-    if (nickname.trim().isEmpty) return;
-
-    await PreferencesService.saveNickname(nickname);
+  void updateNickname(String newNickname) {
     setState(() {
-      this.nickname = nickname;
-    });
-  }
-
-  Future<void> updateNickname() async {
-    final nickname = await PreferencesService.getNickname();
-    setState(() {
-      this.nickname = nickname;
+      nickname = newNickname;
     });
   }
 
@@ -65,7 +52,7 @@ class HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text("district"),
+        title: Text("district", style: TextStyle(fontSize: 16)),
         backgroundColor: const Color.fromARGB(255, 255, 255, 0),
       ),
       body: Center(
@@ -75,8 +62,9 @@ class HomePageState extends State<HomePage> {
         ),
       ),
       floatingActionButton: ConnectButton(
-        onPressed: () => showContactDialog(context, tcpService),
+        onPressed: () => showContactDialog(context, transport),
       ),
+
       drawer: Drawer(
         backgroundColor: const Color.fromARGB(255, 200, 200, 200),
         child: Padding(
@@ -88,12 +76,31 @@ class HomePageState extends State<HomePage> {
                 "Настройки",
                 style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
               ),
+
               SizedBox(height: 20),
-              NicknameInput(
-                controller: _inputController,
-                onSubmitted: saveNickname,
+
+              Row(
+                children: [
+                  Text('Ник:', style: TextStyle(fontSize: 18)),
+                  SizedBox(width: 10),
+                  Text(
+                    nickname,
+                    style: TextStyle(
+                      fontSize: 18,
+                      decoration: TextDecoration.underline,
+                    ),
+                  ),
+                  SizedBox(width: 10),
+                  ElevatedButton(
+                    onPressed: () =>
+                        showNicknameDialog(context, updateNickname),
+                    child: const Icon(Icons.edit),
+                  ),
+                ],
               ),
+
               SizedBox(height: 20),
+
               Text(_port),
             ],
           ),

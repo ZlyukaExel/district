@@ -1,9 +1,9 @@
-import 'package:district/services/tcp_transport.dart';
+import 'package:district/services/preferences.dart';
 import 'package:flutter/material.dart';
 
-Future<void> showContactDialog(
+Future<void> showNicknameDialog(
   BuildContext context,
-  TcpTransport transport,
+  Function(String) onSubmit,
 ) async {
   final TextEditingController controller = TextEditingController();
 
@@ -11,10 +11,10 @@ Future<void> showContactDialog(
     context: context,
     builder: (context) {
       return AlertDialog(
-        title: const Text('Новый контакт'),
+        title: const Text('Изменить ник'),
         content: TextField(
           controller: controller,
-          decoration: const InputDecoration(hintText: "Введите порт..."),
+          decoration: const InputDecoration(hintText: "Введите ник..."),
           autofocus: true,
         ),
         actions: [
@@ -25,10 +25,11 @@ Future<void> showContactDialog(
           ElevatedButton(
             onPressed: () {
               final userInput = controller.text;
+              onSubmit.call(userInput);
+              Preferences.saveNickname(userInput);
               Navigator.pop(context);
-              transport.startClient(int.parse(userInput));
             },
-            child: const Text('Добавить'),
+            child: const Text('Подтвердить'),
           ),
         ],
       );

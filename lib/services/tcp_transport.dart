@@ -1,7 +1,7 @@
 import 'package:district/tcp_client.dart';
 import 'package:district/tcp_server.dart';
 
-class TcpService {
+class TcpTransport {
   final TcpServer server = TcpServer();
   final TcpClient client = TcpClient();
 

@@ -1,6 +1,6 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
-class PreferencesService {
+class Preferences {
   static const String nicknameKey = 'player_nickname';
 
   static Future<void> saveNickname(String nickname) async {

@@ -15,7 +15,7 @@ class TcpServer {
     server.listen((socket) {
       // Добавляем клиента
       _clients.add(socket);
-      print('Клиент $socket подключился');
+      print('Клиент подключился');
 
       // Принимаем сообщения от клиента
       socket.listen(
