@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:district/services/message.dart';
+
 class TcpClient {
   late Socket server;
 
@@ -15,7 +17,7 @@ class TcpClient {
       // Принимаем сообщения от сервера
       server.listen(
         (eventBytes) {
-          final result = utf8.decode(eventBytes);
+          final Message result = Message.fromString(utf8.decode(eventBytes));
           print('Получено сообщение: $result');
         },
         onDone: () {
@@ -26,8 +28,14 @@ class TcpClient {
         },
       );
 
+      Message message = Message(
+        type: 'connect',
+        from: 'user',
+        timestamp: DateTime.now(),
+      );
+
       // Отправляем сообщение о подключении
-      server.add(utf8.encode('Привет!'));
+      server.add(utf8.encode(jsonEncode(message.toJson())));
 
       return true;
     } catch (e) {

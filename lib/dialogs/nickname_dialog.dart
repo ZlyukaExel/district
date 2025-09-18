@@ -26,7 +26,7 @@ Future<void> showNicknameDialog(
             onPressed: () {
               final userInput = controller.text;
               onSubmit.call(userInput);
-              Preferences.saveNickname(userInput);
+              Preferences.setString('nickname', userInput);
               Navigator.pop(context);
             },
             child: const Text('Подтвердить'),
