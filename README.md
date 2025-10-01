@@ -1,1 +1,1 @@
-A simple p2p messenger/torrent
+A simple p2p torrent
