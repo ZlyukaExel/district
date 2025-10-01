@@ -1,6 +1,6 @@
-import 'package:district/dialogs/nickname_dialog.dart';
-import 'package:district/peer.dart';
+import 'package:district/structures/peer.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 class CustomDrawer extends StatelessWidget {
   final Peer peer;
@@ -26,26 +26,34 @@ class CustomDrawer extends StatelessWidget {
 
             Row(
               children: [
-                Text('Ник:', style: TextStyle(fontSize: 18)),
+                Text('Ваш ID:', style: TextStyle(fontSize: 18)),
                 SizedBox(width: 10),
                 Text(
-                  peer.nickname,
+                  peer.id.toString(),
                   style: TextStyle(
                     fontSize: 18,
                     decoration: TextDecoration.underline,
                   ),
                 ),
                 SizedBox(width: 10),
-                ElevatedButton(
-                  onPressed: () =>
-                      showNicknameDialog(context, peer.setNickname),
-                  child: const Icon(Icons.edit),
+                IconButton(
+                  icon: const Icon(Icons.copy, size: 16),
+                  onPressed: () async {
+                    await Clipboard.setData(ClipboardData(text: peer.id));
+
+                    // Типа тост
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Скопировано в буфер обмена'),
+                      ),
+                    );
+                  },
                 ),
               ],
             ),
 
             SizedBox(height: 20),
-
             Text('Порт: ${peer.port}', style: TextStyle(fontSize: 18)),
           ],
         ),

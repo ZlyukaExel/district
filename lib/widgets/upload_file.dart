@@ -1,15 +1,15 @@
 import 'package:flutter/material.dart';
 
-class ConnectButton extends StatelessWidget {
+class UploadFileButton extends StatelessWidget {
   final VoidCallback onPressed;
 
-  const ConnectButton({super.key, required this.onPressed});
+  const UploadFileButton({super.key, required this.onPressed});
 
   @override
   Widget build(BuildContext context) {
     return FloatingActionButton(
       onPressed: onPressed,
-      tooltip: 'Добавить контакт',
+      tooltip: 'Выложить файл',
       child: const Icon(Icons.add),
     );
   }

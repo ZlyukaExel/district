@@ -1,16 +1,14 @@
-import 'package:district/dialogs/connect_dialog.dart';
+import 'package:district/dialogs/upload_file.dart';
 import 'package:district/home/home_page.dart';
-import 'package:district/peer.dart';
-import 'package:district/services/tcp_transport.dart';
-import 'package:district/widgets/chats_list.dart';
-import 'package:district/widgets/connect_button.dart';
-import 'package:district/widgets/drawer.dart';
+import 'package:district/structures/peer.dart';
+import 'package:district/udp_broadcast.dart';
+import 'package:district/widgets/files_list.dart';
 import 'package:flutter/material.dart';
 
 class HomePageState extends State<HomePage> {
-  final Peer peer = Peer();
-  final TcpTransport transport = TcpTransport();
-  final List<String> contacts = [];
+  final peer = Peer();
+  final filesList = FilesList();
+  final udpDiscovery = UdpDiscovery();
 
   // На старте
   @override
@@ -26,13 +24,8 @@ class HomePageState extends State<HomePage> {
   }
 
   Future<void> _startApp() async {
-    await transport.startServer();
-    peer.initialize();
-    peer.addListener(updateUi);
-  }
-
-  void updateUi() {
-    setState(() {});
+    await peer.initialize();
+    udpDiscovery.startDiscovery(peer);
   }
 
   @override
@@ -43,18 +36,27 @@ class HomePageState extends State<HomePage> {
         backgroundColor: const Color.fromARGB(255, 255, 255, 0),
       ),
 
-      body: ChatsList(),
-      floatingActionButton: ConnectButton(
-        onPressed: () => showContactDialog(context, transport),
+      body: filesList,
+      floatingActionButton: Column(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          FloatingActionButton(
+            heroTag: "uploadButton",
+            tooltip: "Выложить файл",
+            onPressed: () => uploadFiles(filesList),
+            child: Icon(Icons.upload),
+          ),
+          SizedBox(height: 10),
+          FloatingActionButton(
+            heroTag: "downloadButton",
+            tooltip: "Скачать файл",
+            onPressed: () => peer.requestFile('hashKey'),
+            child: Icon(Icons.download),
+          ),
+        ],
       ),
 
-      drawer: CustomDrawer(context: context, peer: peer),
+      //drawer: CustomDrawer(context: context, peer: peer),
     );
-  }
-
-  void getClients() {
-    for (var client in transport.server.clients) {
-      print(client);
-    }
   }
 }
