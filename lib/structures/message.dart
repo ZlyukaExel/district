@@ -4,13 +4,15 @@ import 'dart:typed_data';
 class Message {
   final MessageType type;
   final String from;
+  final String? to;
   final dynamic data;
 
-  Message({required this.type, required this.from, this.data});
+  Message({required this.type, required this.from, this.to, this.data});
 
   Map<String, dynamic> toJson() => {
     'type': type.index,
     'from': from,
+    'to': to,
     'data': data,
   };
 
@@ -20,6 +22,7 @@ class Message {
     return Message(
       type: MessageType.values[json['type']],
       from: json['from'],
+      to: json['to'],
       data: json['data'],
     );
   }
@@ -36,4 +39,4 @@ class Message {
   }
 }
 
-enum MessageType { connect, request, answer }
+enum MessageType { connect, request, answer, debug }

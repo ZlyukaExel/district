@@ -1,3 +1,4 @@
+import 'package:district/dialogs/download_file.dart';
 import 'package:district/dialogs/upload_file.dart';
 import 'package:district/home/home_page.dart';
 import 'package:district/structures/peer.dart';
@@ -6,7 +7,7 @@ import 'package:district/widgets/files_list.dart';
 import 'package:flutter/material.dart';
 
 class HomePageState extends State<HomePage> {
-  final peer = Peer();
+  late final Peer peer;
   final filesList = FilesList();
   final udpDiscovery = UdpDiscovery();
 
@@ -24,8 +25,8 @@ class HomePageState extends State<HomePage> {
   }
 
   Future<void> _startApp() async {
-    await peer.initialize();
-    udpDiscovery.startDiscovery(peer);
+    peer = await Peer.create();
+    peer.startDiscovery();
   }
 
   @override
@@ -50,7 +51,7 @@ class HomePageState extends State<HomePage> {
           FloatingActionButton(
             heroTag: "downloadButton",
             tooltip: "Скачать файл",
-            onPressed: () => peer.requestFile('hashKey'),
+            onPressed: () => showHashInputDialog(context, peer.requestFile),
             child: Icon(Icons.download),
           ),
         ],
