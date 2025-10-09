@@ -1,24 +1,35 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:district/structures/message.dart';
+import 'package:district/structures/peer.dart';
 
 class TcpServer {
-  late ServerSocket server;
+  final Peer _peer;
+  late ServerSocket _server;
   final Set<Socket> clients = <Socket>{};
+  late final int port;
   Completer<Message>? _completer;
   Message? _expectedRequest;
 
-  Future<int> startServer() async {
-    server = await ServerSocket.bind('localhost', 0);
+  static Future<TcpServer> create(Peer peer) async {
+    TcpServer server = TcpServer._(peer: peer);
+    await server._startServer();
+    return server;
+  }
+
+  TcpServer._({required Peer peer}) : _peer = peer;
+
+  Future<void> _startServer() async {
+    _server = await ServerSocket.bind('localhost', 0);
 
     // Слушаем клиентов
-    server.listen((socket) async {
+    _server.listen((socket) async {
       clients.add(socket);
 
       socket.listen(
         (eventBytes) {
           final message = Message.decode(eventBytes);
-          print('Получено сообщение: $message');
+          _peer.messageGot(message);
 
           // Если ожидаем ответ
           if (_completer != null && _expectedRequest != null) {
@@ -35,13 +46,14 @@ class TcpServer {
           clients.remove(socket);
         },
 
-        onError: () {
+        onError: (e) {
           clients.remove(socket);
+          print("Tcp Server listen error: $e");
         },
       );
     });
 
-    return server.port;
+    port = _server.port;
   }
 
   Future<Message?> sendToAll(Message message, bool awaitResponce) async {

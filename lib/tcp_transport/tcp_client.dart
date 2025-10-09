@@ -1,12 +1,16 @@
 import 'dart:io';
 import 'package:district/structures/message.dart';
+import 'package:district/structures/peer.dart';
 
 class TcpClient {
-  late Socket server;
+  final int port;
 
-  Future<bool> startClient(int port) async {
+  TcpClient._({required this.port});
+
+  static Future<TcpClient?> startClient(Peer peer, int port) async {
     try {
-      server = await Socket.connect(
+      // Пробуем подключиться к серверу
+      Socket server = await Socket.connect(
         'localhost',
         port,
         timeout: Duration(seconds: 5),
@@ -14,10 +18,12 @@ class TcpClient {
 
       print("Подключился к серверу на порт $port");
 
+      TcpClient client = TcpClient._(port: port);
+
       // Принимаем сообщения от сервера
       server.listen((eventBytes) {
         final Message message = Message.decode(eventBytes);
-        print('Получено сообщение: $message');
+        peer.messageGot(message);
 
         // Проверяем наличие файла и отправляем ответ если нашли
         bool hasFile = true;
@@ -25,15 +31,17 @@ class TcpClient {
           final answer = Message(
             type: MessageType.answer,
             from: 'user',
+            to: message.from,
             data: message.data,
           );
           server.add(answer.encode());
         }
       });
-      return true;
+
+      return client;
     } catch (e) {
       print("Не удалось подключиться: $e");
-      return false;
+      return null;
     }
   }
 }

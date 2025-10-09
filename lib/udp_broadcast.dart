@@ -36,14 +36,12 @@ class UdpDiscovery {
 
           // Игнорируем свои сообщения
           if (responce.from != peer.id) {
-            print(
-              'Получен запрос от ${responce.from}: ${responce.type}: ${responce.data}',
-            );
-            peer.client.startClient(responce.data);
+            //print('Получен запрос от ${responce.from}: ${responce.type}: ${responce.data}');
+            peer.connect(responce.data);
           }
         }
       } else {
-        print("Просто какой-то шум");
+        //print("Просто какой-то шум");
       }
     });
 
