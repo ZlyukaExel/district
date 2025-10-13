@@ -23,19 +23,7 @@ class TcpClient {
       // Принимаем сообщения от сервера
       server.listen((eventBytes) {
         final Message message = Message.decode(eventBytes);
-        peer.messageGot(message);
-
-        // Проверяем наличие файла и отправляем ответ если нашли
-        bool hasFile = true;
-        if (message.type == MessageType.request && hasFile) {
-          final answer = Message(
-            type: MessageType.answer,
-            from: 'user',
-            to: message.from,
-            data: message.data,
-          );
-          server.add(answer.encode());
-        }
+        peer.messageGot(message, server);
       });
 
       return client;

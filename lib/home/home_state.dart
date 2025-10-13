@@ -2,7 +2,7 @@ import 'package:district/dialogs/download_file.dart';
 import 'package:district/dialogs/upload_file.dart';
 import 'package:district/home/home_page.dart';
 import 'package:district/structures/peer.dart';
-import 'package:district/udp_broadcast.dart';
+import 'package:district/udp_discovery.dart';
 import 'package:district/widgets/files_list.dart';
 import 'package:flutter/material.dart';
 
@@ -25,7 +25,7 @@ class HomePageState extends State<HomePage> {
   }
 
   Future<void> _startApp() async {
-    peer = await Peer.create();
+    peer = await Peer.create(context, filesList.files.list);
     peer.startDiscovery();
   }
 

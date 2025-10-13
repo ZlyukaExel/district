@@ -29,7 +29,7 @@ class TcpServer {
       socket.listen(
         (eventBytes) {
           final message = Message.decode(eventBytes);
-          _peer.messageGot(message);
+          _peer.messageGot(message, socket);
 
           // Если ожидаем ответ
           if (_completer != null && _expectedRequest != null) {

@@ -11,4 +11,9 @@ class Preferences {
     String? value = prefs.getString(key);
     return (value == null || value.trim().isEmpty) ? defaultValue : value;
   }
+
+  static Future<bool> hasKey(String key) async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    return prefs.containsKey(key);
+  }
 }

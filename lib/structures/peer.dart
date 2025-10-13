@@ -1,40 +1,43 @@
-import 'dart:math';
-
-// import 'package:district/preferences.dart';
+import 'dart:io';
+import 'package:district/structures/hashed_file.dart';
+import 'package:district/structures/id_generator.dart';
 import 'package:district/structures/message.dart';
 import 'package:district/tcp_transport/tcp_client.dart';
 import 'package:district/tcp_transport/tcp_server.dart';
-import 'package:district/udp_broadcast.dart';
-// import 'package:uuid/uuid.dart';
+import 'package:district/udp_discovery.dart';
+import 'package:flutter/material.dart';
 
 class Peer {
   late final String id;
   late final int port;
+  late final BuildContext context;
   late final TcpServer _server;
   late final Set<TcpClient> _clients = <TcpClient>{};
   final _udpDiscovery = UdpDiscovery();
+  late final ValueNotifier<List<HashedFile>> _files;
 
   Peer._();
 
-  static Future<Peer> create() async {
-    Random random = Random.secure();
-
+  static Future<Peer> create(
+    BuildContext context,
+    ValueNotifier<List<HashedFile>> files,
+  ) async {
     // Создаем пир
     Peer peer = Peer._();
 
-    // Получаем/создаем ID узла
-    //await Preferences.getString('id', 'Undefined');
-    // if (id == 'Undefined') {
-    //   id = const Uuid().v4();
-    //   Preferences.setString('id', id);
-    // }
-    peer.id = random.nextInt(10000000).toString();
+    peer.context = context;
+
+    // Создаем ID узла
+    peer.id = generateRandomId();
 
     // Запускаем сервер
     peer._server = await TcpServer.create(peer);
 
-    // Получаем пир сервера
+    // Получаем порт сервера
     peer.port = peer._server.port;
+
+    // Передаем ссылку на список файлов
+    peer._files = files;
 
     return peer;
   }
@@ -56,8 +59,31 @@ class Peer {
     _server.sendToAll(message, false);
   }
 
-  void messageGot(Message message) {
-    print('Получено сообщение: $message');
+  void messageGot(Message message, Socket sender) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text("$message")));
+
+    // Проверяем наличие файла и отправляем ответ если нашли
+    if (message.type == MessageType.request) {
+      bool containsFile = false;
+      for (var hashedFile in _files.value) {
+        if (hashedFile.hash == message.data) {
+          containsFile = true;
+          break;
+        }
+      }
+
+      if (containsFile) {
+        final answer = Message(
+          type: MessageType.answer,
+          from: id,
+          to: message.from,
+          data: message.data,
+        );
+        sender.add(answer.encode());
+      }
+    }
   }
 
   Future<bool> connect(int port) async {
