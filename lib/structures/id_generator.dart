@@ -1,10 +1,8 @@
-import 'dart:math';
+import 'dart:convert';
+import 'package:crypto/crypto.dart';
 
-String generateRandomId({int length = 16}) {
-  const String chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
-  Random random = Random.secure();
-  return String.fromCharCodes(Iterable.generate(
-  length,
-  (_) => chars.codeUnitAt(random.nextInt(chars.length))
-));
+String generateRandomId(String input, {int length = 32}) {
+  final bytes = utf8.encode(input);
+  final hash = sha256.convert(bytes);
+  return hash.toString();
 }

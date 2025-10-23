@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
-import 'package:district/structures/message.dart';
+import 'package:district/structures/messages/connect_message.dart';
+import 'package:district/structures/messages/message.dart';
 import 'package:district/structures/peer.dart';
 
 class UdpDiscovery {
@@ -20,8 +21,7 @@ class UdpDiscovery {
     socket.broadcastEnabled = true;
 
     // Создаем запрос на подключение
-    Message message = Message(
-      type: MessageType.connect,
+    Message message = ConnectMessage(
       from: peer.id,
       data: peer.port, // Tcp порт в качестве данных для подключения к серверу
     );
@@ -32,7 +32,7 @@ class UdpDiscovery {
       if (event == RawSocketEvent.read) {
         Datagram? dg = socket.receive();
         if (dg != null) {
-          final responce = Message.decode(dg.data);
+          final responce = decodeMessage(dg.data);
 
           // Игнорируем свои сообщения
           if (responce.from != peer.id) {

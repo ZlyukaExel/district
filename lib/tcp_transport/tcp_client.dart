@@ -1,5 +1,5 @@
 import 'dart:io';
-import 'package:district/structures/message.dart';
+import 'package:district/structures/messages/message.dart';
 import 'package:district/structures/peer.dart';
 
 class TcpClient {
@@ -22,7 +22,7 @@ class TcpClient {
 
       // Принимаем сообщения от сервера
       server.listen((eventBytes) {
-        final Message message = Message.decode(eventBytes);
+        final Message message = decodeMessage(eventBytes);
         peer.messageGot(message, server);
       });
 
