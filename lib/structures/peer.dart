@@ -10,6 +10,9 @@ import 'package:district/tcp_transport/tcp_client.dart';
 import 'package:district/tcp_transport/tcp_server.dart';
 import 'package:district/udp_discovery.dart';
 import 'package:flutter/material.dart';
+import 'package:district/structures/bloom_filter.dart';
+import 'package:district/structures/hash_table.dart';
+import 'package:district/structures/avl_tree.dart';
 
 class Peer {
   late final String id;
@@ -20,6 +23,9 @@ class Peer {
   late final Set<TcpClient> _clients = <TcpClient>{};
   final _udpDiscovery = UdpDiscovery();
   late final ValueNotifier<List<HashedFile>> _files;
+  late final BloomFilter _bloomFilter;
+  late final HashTable<String, dynamic> _fileMetadata;
+  late final AVLTree _reputationTree;
 
   Completer<Message>? _completer;
   Message? _expectedRequest;
@@ -50,6 +56,11 @@ class Peer {
 
     // Передаем ссылку на список файлов
     peer._files = files;
+    peer._bloomFilter = BloomFilter(size: 50000, numHashes: 3);
+
+    peer._fileMetadata = HashTable<String, dynamic>();
+
+    peer._reputationTree = AVLTree();
 
     return peer;
   }
@@ -189,4 +200,59 @@ class Peer {
 
     return false;
   }
+  // Добавить файл 
+void addFileToBloomFilter(String fileHash) {
+_bloomFilter.addFile(fileHash);
+print(' Файл $fileHash добавлен в фильтр Блума');
+}
+
+// Проверить наличие файла
+bool checkFileInBloomFilter(String fileHash) {
+return _bloomFilter.hasFile(fileHash);
+}
+
+// Добавить несколько файлов 
+void addFilesToBloomFilter(List<String> fileHashes) {
+_bloomFilter.addFiles(fileHashes);
+print(' ${fileHashes.length} файлов добавлены в фильтр Блума');
+}
+// Сохранить метаданные файла
+void storeFileMetadata(String fileHash, Map<String, dynamic> metadata) {
+_fileMetadata.put(fileHash, metadata);
+print(' Метаданные файла $fileHash сохранены');
+}
+
+//Получить метаданные
+Map<String, dynamic>? getFileMetadata(String fileHash) {
+return _fileMetadata.get(fileHash);
+}
+// Проверить, есть ли метаданные 
+bool hasFileMetadata(String fileHash) {
+return _fileMetadata.containsKey(fileHash);
+}
+List<Map<String, dynamic>> getAllFilesMetadata() {
+return _fileMetadata.getValues().cast<Map<String, dynamic>>();
+}
+/// Добавить репутационный рейтинг пира
+void addPeerReputation(int reputation) {
+_reputationTree.insert(reputation);
+print(' Рейтинг пира добавлен: $reputation');
+}
+
+// Проверить наличие рейтинга
+bool hasPeerReputation(int reputation) {
+return _reputationTree.search(reputation);
+}
+
+// Получить отсортированные
+List<int> getSortedReputations() {
+return _reputationTree.inOrder();
+}
+
+double getAverageReputation() {
+List<int> reputations = getSortedReputations();
+if (reputations.isEmpty) return 0;
+int sum = reputations.fold(0, (a, b) => a + b);
+return sum / reputations.length;
+}
 }
