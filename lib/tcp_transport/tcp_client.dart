@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:district/structures/messages/connect_message.dart';
 import 'package:district/structures/messages/message.dart';
 import 'package:district/structures/peer.dart';
 
@@ -7,7 +8,11 @@ class TcpClient {
 
   TcpClient._({required this.port});
 
-  static Future<TcpClient?> startClient(Peer peer, int port) async {
+  static Future<TcpClient?> startClient(
+    Peer peer,
+    int port,
+    ConnectMessage connectMessage,
+  ) async {
     try {
       // Пробуем подключиться к серверу
       Socket server = await Socket.connect(
@@ -19,6 +24,9 @@ class TcpClient {
       print("Подключился к серверу на порт $port");
 
       TcpClient client = TcpClient._(port: port);
+
+      // Обмениваемся данными с сервером
+      server.add(connectMessage.encode());
 
       // Принимаем сообщения от сервера
       server.listen((eventBytes) {
