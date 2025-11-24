@@ -11,6 +11,8 @@ import 'package:district/tcp_transport/tcp_client.dart';
 import 'package:district/tcp_transport/tcp_server.dart';
 import 'package:district/udp_discovery.dart';
 import 'package:flutter/material.dart';
+import 'package:district/structures/bloom_filter.dart';
+import 'package:district/structures/hash_table.dart';
 
 class Peer {
   late final String id;
@@ -19,6 +21,8 @@ class Peer {
   late final BuildContext context;
   late final TcpServer _server;
   final _udpDiscovery = UdpDiscovery();
+  late final BloomFilter _bloomFilter;
+  late final HashTable<String, dynamic> _fileMetadata;
   late final ValueNotifier<List<HashedFile>> _files;
 
 
@@ -51,6 +55,18 @@ class Peer {
 
     // Передаем ссылку на список файлов
     peer._files = files;
+
+    peer._bloomFilter = BloomFilter(size: 50000, numHashes: 3);
+
+    peer._fileMetadata = HashTable<String, dynamic>();
+     for (final hashedFile in files.value) {
+      peer._bloomFilter.addFile(hashedFile.hash);
+      peer._fileMetadata.put(hashedFile.hash, {
+        'hash': hashedFile.hash,
+        'peer_id': peer.id,
+        'timestamp': DateTime.now().toIso8601String(),
+      });
+    }
     
     return peer;
   }
@@ -60,6 +76,18 @@ class Peer {
   }
 
   Future<bool> requestFile(String hashKey) async {
+    if (!_bloomFilter.hasFile(hashKey)) {
+      print(' Файл $hashKey отсутствует в сети');
+    if (context.mounted) {
+       ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(' Файл не найден в сети'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+    return false;
+  }
     print('Запрошен файл $hashKey');
     final message = RequestMessage(from: id, data: hashKey);
     _server.sendMessage(message);
@@ -215,6 +243,15 @@ class Peer {
       return true;
     }
     return false;
+  }
+  void addFileToBloomFilter(String fileHash) {
+    _bloomFilter.addFile(fileHash);
+    _fileMetadata.put(fileHash, {
+      'hash': fileHash,
+      'peer_id': id,
+      'timestamp': DateTime.now().toIso8601String(),
+    });
+    print('Файл $fileHash добавлен в фильтр');
   }
 
   bool keepSearching() => _server.clients.length < K;

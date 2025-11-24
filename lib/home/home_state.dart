@@ -44,7 +44,7 @@ class HomePageState extends State<HomePage> {
           FloatingActionButton(
             heroTag: "uploadButton",
             tooltip: "Выложить файл",
-            onPressed: () => uploadFiles(filesList),
+            onPressed: () => uploadFiles(filesList, peer),
             child: Icon(Icons.upload),
           ),
           SizedBox(height: 10),
