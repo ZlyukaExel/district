@@ -75,19 +75,7 @@ class Peer {
     _udpDiscovery.startDiscovery(this);
   }
 
-  Future<bool> requestFile(String hashKey) async {
-    if (!_bloomFilter.hasFile(hashKey)) {
-      print(' Файл $hashKey отсутствует в сети');
-    if (context.mounted) {
-       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(' Файл не найден в сети'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
-    return false;
-  }
+  Future<bool> requestFile(String hashKey) async {    
     print('Запрошен файл $hashKey');
     final message = RequestMessage(from: id, data: hashKey);
     _server.sendMessage(message);
@@ -159,14 +147,18 @@ class Peer {
       }
       // Если это запрос файла
       else if (message is RequestMessage) {
-        bool containsFile = false;
-        for (final hashedFile in _files.value) {
-          if (hashedFile.hash == message.data) {
-            containsFile = true;
-            break;
+        bool containsFile = _bloomFilter.hasFile(message.data);
+
+        if (containsFile){
+          containsFile = false;
+          for (final hashedFile in _files.value) {
+            if (hashedFile.hash == message.data) {
+              containsFile = true;
+              break;
+            }
           }
         }
-
+        
         // Если имеем файл, возвращаем его хэш
         if (containsFile) {
           final answer = AnswerMessage(
@@ -181,7 +173,7 @@ class Peer {
           final answer = AnswerMessage(
             from: id,
             to: message.from,
-            data: _server.clients.map((client) => client.id).toList(),
+            data: _server.clients.map((client) => client.port).toList(),
           );
           sender.add(answer.encode());
         }
@@ -197,16 +189,17 @@ class Peer {
             _completer = null;
             _expectedRequest = null;
           }
-          // Если вернулся список других узлов - опрашиваем уже их =====================================================
+          // Если вернулся список других узлов - опрашиваем уже их
           else {
-            for (final peerId in message.data.toString().split(', ')) {
-              final newMessage = RequestMessage(
-                from: id,
-                to: peerId,
-                data: _expectedRequest?.data,
-              );
-              _server.sendMessage(newMessage);
+            for (final peerPort in message.data.toString().split(', ')) {
+              connect(null, int.parse(peerPort));
             }
+            
+            final newMessage = RequestMessage(
+              from: id,
+              data: _expectedRequest?.data,
+            );
+            _server.sendMessage(newMessage);
           }
         }
       }
@@ -217,7 +210,7 @@ class Peer {
     }
   }
 
-  Future<bool> connect(String senderId, int port) async {
+  Future<bool> connect(String? senderId, int port) async {
     bool alreadyConnected = _server.clients.any(
       (client) => client.port == port,
     );
@@ -232,11 +225,18 @@ class Peer {
       "${_server.clients.map((client) => client.port)}, порт: $port",
     );
 
-    final connectMessage = ConnectMessage(
+    ConnectMessage connectMessage;
+    
+    if (senderId == null){
+      connectMessage = ConnectMessage(
+      from: id,
+      data: this.port,);
+    } else { 
+      connectMessage = ConnectMessage(
       from: id,
       to: senderId,
       data: this.port,
-    );
+    );}
 
     TcpClient? client = await TcpClient.startClient(this, port, connectMessage);
     if (client != null) {
@@ -244,6 +244,7 @@ class Peer {
     }
     return false;
   }
+
   void addFileToBloomFilter(String fileHash) {
     _bloomFilter.addFile(fileHash);
     _fileMetadata.put(fileHash, {

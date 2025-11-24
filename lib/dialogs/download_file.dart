@@ -26,7 +26,7 @@ Future<void> showHashInputDialog(
             border: OutlineInputBorder(),
           ),
           autofocus: true,
-          onSubmitted: (_) => confirm(),
+          //onSubmitted: (_) => confirm(),
           textInputAction: TextInputAction.done,
         ),
         actions: [
