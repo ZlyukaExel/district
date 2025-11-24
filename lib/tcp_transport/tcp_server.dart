@@ -1,12 +1,13 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:district/structures/client_info.dart';
 import 'package:district/structures/messages/message.dart';
 import 'package:district/structures/peer.dart';
 
 class TcpServer {
   final Peer _peer;
   late ServerSocket _server;
-  final Set<Socket> clients = <Socket>{};
+  final Set<ClientInfo> clients = <ClientInfo>{};
   late final int port;
 
   static Future<TcpServer> create(Peer peer) async {
@@ -22,8 +23,6 @@ class TcpServer {
 
     // Слушаем клиентов
     _server.listen((socket) async {
-      clients.add(socket);
-
       socket.listen(
         (eventBytes) {
           final message = decodeMessage(eventBytes);
@@ -31,12 +30,12 @@ class TcpServer {
         },
 
         onDone: () {
-          clients.remove(socket);
+          clients.removeWhere((client) => socket == client.socket);
         },
 
         onError: (e) {
-          clients.remove(socket);
-          print("Tcp Server listen error: $e");
+          clients.removeWhere((client) => socket == client.socket);
+          print("Ошибка при прослушивании клиента: $e");
         },
       );
     });
@@ -44,13 +43,23 @@ class TcpServer {
     port = _server.port;
   }
 
-  void sendToAll(Message message) async {
+  void sendMessage(Message message) {
     // Кодируем сообщение
     final encoded = message.encode();
 
-    // Отправляем всем известным
-    for (final socket in clients) {
-      socket.add(encoded);
+    if (message.to == null) {
+      // Отправляем всем клиентам
+      for (final client in clients) {
+        message.to = client.id;
+        client.socket.add(encoded);
+      }
+    } else {
+      // Отправляем конкретному пользователю
+      for (final client in clients) {
+        if (client.id == message.to) {
+          client.socket.add(encoded);
+        }
+      }
     }
   }
 }

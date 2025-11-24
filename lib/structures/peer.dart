@@ -1,9 +1,10 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:district/structures/client_info.dart';
 import 'package:district/structures/hashed_file.dart';
 import 'package:district/structures/id_generator.dart';
 import 'package:district/structures/messages/answer_message.dart';
-import 'package:district/structures/messages/debug_message.dart';
+import 'package:district/structures/messages/connect_message.dart';
 import 'package:district/structures/messages/message.dart';
 import 'package:district/structures/messages/request_message.dart';
 import 'package:district/tcp_transport/tcp_client.dart';
@@ -14,10 +15,9 @@ import 'package:flutter/material.dart';
 class Peer {
   late final String id;
   late final int port;
-  static final int K = 8;
+  static final int K = 3;
   late final BuildContext context;
   late final TcpServer _server;
-  late final Set<TcpClient> _clients = <TcpClient>{};
   final _udpDiscovery = UdpDiscovery();
   late final ValueNotifier<List<HashedFile>> _files;
 
@@ -62,7 +62,7 @@ class Peer {
   Future<bool> requestFile(String hashKey) async {
     print('Запрошен файл $hashKey');
     final message = RequestMessage(from: id, data: hashKey);
-    _server.sendToAll(message);
+    _server.sendMessage(message);
 
     // Ожидаем ответ
     bool isFound = false;
@@ -95,22 +95,42 @@ class Peer {
     return isFound;
   }
 
-  void send(String text) {
-    final message = DebugMessage(from: id, data: text);
-    _server.sendToAll(message);
-  }
-
   void messageGot(Message message, Socket sender) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text("$message")));
-
-    print(message.to);
-
     // Если сообщение нам, обрабатываем его
     if (message.to == null || message.to == id) {
-      // Проверяем наличие файла и отправляем ответ если нашли
-      if (message is RequestMessage) {
+      // Если это запрос на подключение
+      if (message is ConnectMessage) {
+        bool alreadyConnected = _server.clients.any(
+          (client) => client.id == message.from,
+        );
+
+        print("Запрос на подключение. Уже подключен: $alreadyConnected");
+
+        // Если ещё не подключен, добавляем клиента в список
+        if (!alreadyConnected) {
+          ClientInfo client = ClientInfo(
+            id: message.from,
+            port: message.data,
+            socket: sender,
+          );
+          _server.clients.add(client);
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Подключился к ${message.from}')),
+          );
+
+          // Также отправляем обратный ответ
+          ConnectMessage connectMessage = ConnectMessage(
+            from: id,
+            to: message.from,
+            data: port,
+          );
+
+          sender.add(connectMessage.encode());
+        }
+      }
+      // Если это запрос файла
+      else if (message is RequestMessage) {
         bool containsFile = false;
         for (final hashedFile in _files.value) {
           if (hashedFile.hash == message.data) {
@@ -133,7 +153,7 @@ class Peer {
           final answer = AnswerMessage(
             from: id,
             to: message.from,
-            data: _clients.join(),
+            data: _server.clients.map((client) => client.id).toList(),
           );
           sender.add(answer.encode());
         }
@@ -149,45 +169,53 @@ class Peer {
             _completer = null;
             _expectedRequest = null;
           }
-          // Если вернулся список других узлов - опрашиваем уже их
+          // Если вернулся список других узлов - опрашиваем уже их =====================================================
           else {
-            for (final peerId in message.data.toString().split(' ')) {
+            for (final peerId in message.data.toString().split(', ')) {
               final newMessage = RequestMessage(
                 from: id,
                 to: peerId,
                 data: _expectedRequest?.data,
               );
-              _server.sendToAll(newMessage);
+              _server.sendMessage(newMessage);
             }
           }
         }
       }
     }
-    // Если не нам, передаем дальше
-    // --To-do: Вызывает петли запросов
+    // Если сообщение не нам, игнорируем его
     else {
-      print("Сообщение не нам, передаем дальше");
-      //_server.sendToAll(message);
+      print("Сообщение не нам, игнорируем");
     }
   }
 
-  Future<bool> connect(int port) async {
-    bool alreadyConnected = false;
-    for (var client in _clients) {
-      if (port == client.port) {
-        alreadyConnected = true;
-        break;
-      }
+  Future<bool> connect(String senderId, int port) async {
+    bool alreadyConnected = _server.clients.any(
+      (client) => client.port == port,
+    );
+
+    // Если уже подключен, возвращаемся
+    if (alreadyConnected) {
+      return true;
     }
 
-    if (!alreadyConnected) {
-      TcpClient? client = await TcpClient.startClient(this, port);
-      if (client != null) {
-        _clients.add(client);
-        return true;
-      }
-    }
+    print(
+      "[Connect] Уже подключен: $alreadyConnected\n"
+      "${_server.clients.map((client) => client.port)}, порт: $port",
+    );
 
+    final connectMessage = ConnectMessage(
+      from: id,
+      to: senderId,
+      data: this.port,
+    );
+
+    TcpClient? client = await TcpClient.startClient(this, port, connectMessage);
+    if (client != null) {
+      return true;
+    }
     return false;
   }
+
+  bool keepSearching() => _server.clients.length < K;
 }

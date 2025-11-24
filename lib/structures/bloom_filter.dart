@@ -1,4 +1,3 @@
-// lib/structures/bloom_filter.dart
 import 'dart:typed_data';
 import 'dart:convert';
 

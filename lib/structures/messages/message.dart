@@ -26,7 +26,7 @@ Message decodeMessage(Uint8List bytes) {
 
 abstract class Message {
   final String from;
-  final String? to;
+  String? to;
   final dynamic data;
 
   Message({required this.from, this.to, this.data});
