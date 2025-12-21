@@ -4,43 +4,41 @@ import 'package:district/structures/messages/connect_message.dart';
 import 'package:district/structures/messages/message.dart';
 import 'package:district/structures/peer.dart';
 
-class UdpDiscovery {
+class UdpTransport {
   final _broadcastIp = '255.255.255.255';
   final _broadcastPort = 9999;
   final _timeout = 3;
 
   late final Timer timer;
-  late final RawDatagramSocket socket;
+  late final RawDatagramSocket _socket;
+  late final Peer peer;
 
-  Future<void> startDiscovery(Peer peer) async {
+  Future<void> start(Peer peer) async {
     try {
       // Создаем udp socket
-      socket = await RawDatagramSocket.bind(
+      _socket = await RawDatagramSocket.bind(
         InternetAddress.anyIPv4,
         _broadcastPort,
       );
-      socket.broadcastEnabled = true;
+      _socket.broadcastEnabled = true;
 
       // Создаем запрос на подключение
-      Message message = ConnectMessage(
-        from: peer.id,
-        data: peer
-            .port, // Передаем tcp порт в качестве данных для подключения к серверу
-      );
+      Message message = ConnectMessage(from: peer.id);
       final encodedMessage = message.encode();
 
       // Слушаем запросы
-      socket.listen((RawSocketEvent event) {
+      _socket.listen((RawSocketEvent event) {
         if (event == RawSocketEvent.read) {
-          Datagram? dg = socket.receive();
+          Datagram? dg = _socket.receive();
           if (dg != null) {
             try {
-              final responce = decodeMessage(dg.data);
+              final message = decodeMessage(dg.data);
 
               // Игнорируем свои сообщения
-              if (responce.from != peer.id) {
-                print('Получен запрос от ${responce.from}: ${responce.data}');
-                peer.connect(responce.from, responce.data);
+              if (message.from != peer.id &&
+                  (message.to == peer.id || message.to == null)) {
+                //print('Получено сообщение $message');
+                peer.handleMessage(message, dg.address, dg.port);
               }
             } catch (e) {
               print('Ошибка при декодировании: $e');
@@ -49,24 +47,36 @@ class UdpDiscovery {
         }
       });
 
-      // Отправляем запросы
+      // Рекламируем этот узел
       timer = Timer.periodic(Duration(seconds: _timeout), (Timer t) {
-        if (peer.keepSearching()) {
-          socket.send(
-            encodedMessage,
-            InternetAddress(_broadcastIp),
-            _broadcastPort,
-          );
-          //print("[${peer.id}] Рекламируем сервер!");
-        }
+        _socket.send(
+          encodedMessage,
+          InternetAddress(_broadcastIp),
+          _broadcastPort,
+        );
       });
     } catch (e) {
       print('Ошибка создания UDP сокета: $e');
     }
   }
 
-  void stopDiscovery() {
+  void stop() {
     timer.cancel();
-    socket.close();
+    _socket.close();
   }
+
+  void send(Message message, {InternetAddress? address, int? port}) {
+    final encodedMessage = message.encode();
+    if (address == null || port == null) {
+      _socket.send(
+        encodedMessage,
+        InternetAddress(_broadcastIp),
+        _broadcastPort,
+      );
+    } else {
+      _socket.send(encodedMessage, address, port);
+    }
+  }
+
+  void sendFile() {}
 }

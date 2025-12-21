@@ -1,14 +1,11 @@
 import 'dart:async';
 import 'dart:io';
-import 'package:district/structures/client_info.dart';
 import 'package:district/structures/hashed_file.dart';
 import 'package:district/structures/id_generator.dart';
 import 'package:district/structures/messages/answer_message.dart';
 import 'package:district/structures/messages/connect_message.dart';
 import 'package:district/structures/messages/message.dart';
 import 'package:district/structures/messages/request_message.dart';
-import 'package:district/tcp_transport/tcp_client.dart';
-import 'package:district/tcp_transport/tcp_server.dart';
 import 'package:district/udp_discovery.dart';
 import 'package:flutter/material.dart';
 import 'package:district/structures/bloom_filter.dart';
@@ -16,18 +13,18 @@ import 'package:district/structures/hash_table.dart';
 
 class Peer {
   late final String id;
-  late final int port;
   static final int K = 3;
   late final BuildContext context;
-  late final TcpServer _server;
-  final _udpDiscovery = UdpDiscovery();
-  late final BloomFilter _bloomFilter;
-  late final HashTable<String, dynamic> _fileMetadata;
+  final _udpTransport = UdpTransport();
+  final _peers = <String>{};
+  final BloomFilter _bloomFilter = BloomFilter(size: 50000, numHashes: 3);
+  final HashTable<String, dynamic> _fileMetadata = HashTable<String, dynamic>();
   late final ValueNotifier<List<HashedFile>> _files;
 
-
-  Completer<Message>? _completer;
+  Completer<Message?>? _completer;
   Message? _expectedRequest;
+  Set<String>? _askedPeers;
+  Set<String>? _alreadyAskedPeers;
 
   Peer._();
 
@@ -44,22 +41,11 @@ class Peer {
     peer.id = generateRandomId(
       DateTime.now().microsecondsSinceEpoch.toString(),
     );
-
     print("ID узла: ${peer.id}");
-
-    // Запускаем сервер
-    peer._server = await TcpServer.create(peer);
-
-    // Получаем порт сервера
-    peer.port = peer._server.port;
 
     // Передаем ссылку на список файлов
     peer._files = files;
-
-    peer._bloomFilter = BloomFilter(size: 50000, numHashes: 3);
-
-    peer._fileMetadata = HashTable<String, dynamic>();
-     for (final hashedFile in files.value) {
+    for (final hashedFile in files.value) {
       peer._bloomFilter.addFile(hashedFile.hash);
       peer._fileMetadata.put(hashedFile.hash, {
         'hash': hashedFile.hash,
@@ -67,182 +53,162 @@ class Peer {
         'timestamp': DateTime.now().toIso8601String(),
       });
     }
-    
+
     return peer;
   }
 
-  void startDiscovery() {
-    _udpDiscovery.startDiscovery(this);
+  void startTransport() {
+    _udpTransport.start(this);
   }
 
-  Future<bool> requestFile(String hashKey) async {    
+  Future<bool> requestFile(String hashKey) async {
     print('Запрошен файл $hashKey');
+
+    // Если нет узлов, то и опрашивать некого
+    if (_peers.isEmpty) {
+      print("No peers found");
+      _finishSearch(false, "Нет знакомых узлов");
+      return false;
+    }
+
     final message = RequestMessage(from: id, data: hashKey);
-    _server.sendMessage(message);
+    _askedPeers = <String>{};
+    _alreadyAskedPeers = <String>{id};
+
+    // Отправляем запросы всем узлам
+    for (final peer in _peers) {
+      message.to = peer;
+      _udpTransport.send(message);
+      _askedPeers!.add(peer);
+    }
 
     // Ожидаем ответ
     bool isFound = false;
 
     // Completer отслеживает входящие сообщения
-    _completer = Completer<Message>();
+    _completer = Completer<Message?>();
     _expectedRequest = message;
+
+    String resultMessage;
 
     // Ожидаем ответа 5 секунд
     try {
-      await _completer!.future.timeout(Duration(seconds: 5));
-      isFound = true;
+      Message? answer = await _completer!.future.timeout(Duration(seconds: 5));
+      if (answer == null) {
+        resultMessage = "Все известные узлы были опрошены";
+      } else {
+        isFound = true;
+        resultMessage = "Проблем не обнаружено";
+      }
     } on TimeoutException {
-      _completer = null;
-      _expectedRequest = null;
+      resultMessage = "Время ожидания истекло";
     } catch (e) {
-      print(e);
-      _completer = null;
-      _expectedRequest = null;
+      resultMessage = e.toString();
     }
 
+    _finishSearch(isFound, resultMessage);
+    return isFound;
+  }
+
+  void handleMessage(Message message, InternetAddress address, int port) {
+    // Если это запрос на подключение
+    if (message is ConnectMessage) {
+      if (_peersNeeded()) {
+        //print("Узел ${message.from} подключился");
+        _peers.add(message.from);
+      }
+    }
+    // Если это запрос файла
+    else if (message is RequestMessage) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Получено сообщение $message')));
+
+      bool containsFile = _bloomFilter.hasFile(message.data);
+
+      if (containsFile) {
+        containsFile = false;
+        for (final hashedFile in _files.value) {
+          if (hashedFile.hash == message.data) {
+            containsFile = true;
+            break;
+          }
+        }
+      }
+
+      // Если имеем файл, отправляем его
+      if (containsFile) {
+        final answer = AnswerMessage(
+          from: id,
+          to: message.from,
+          data: message.data,
+        );
+        _udpTransport.send(answer, address: address, port: port);
+        _udpTransport.sendFile();
+      }
+      // Если файла нет, возвращаем список имеющихся узлов для продолжения поиска
+      else {
+        final answer = AnswerMessage(
+          from: id,
+          to: message.from,
+          data: _peers.toList(),
+        );
+        _udpTransport.send(answer, address: address, port: port);
+      }
+    }
+    // Если это ответ
+    else if (message is AnswerMessage) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Получен ответ $message')));
+
+      // Если мы ожидаем ответ
+      if (_completer != null &&
+          _expectedRequest != null &&
+          _askedPeers!.contains(message.from)) {
+        // Если файл найден, заканчиваем поиск
+        if (_expectedRequest!.data == message.data) {
+          print("Файл ${_expectedRequest!.data} найден!");
+          _completer!.complete(message);
+        }
+        // Если вернулся список других узлов - опрашиваем уже их
+        else {
+          for (final peerId in message.data) {
+            // Пропускаем уже опрошенные узлы
+            if (_alreadyAskedPeers!.contains(peerId)) {
+              continue;
+            }
+            _expectedRequest!.to = peerId;
+            _udpTransport.send(_expectedRequest!);
+            _askedPeers!.add(peerId);
+          }
+
+          _askedPeers!.remove(message.from);
+          _alreadyAskedPeers!.add(message.from);
+
+          if (_askedPeers!.isEmpty) {
+            print("Все доступные узлы были опрошены");
+            _completer!.complete(null);
+          }
+        }
+      }
+    }
+  }
+
+  void _finishSearch(bool isFound, String message) {
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Файл $hashKey ${isFound ? 'найден' : 'не найден'}'),
+          content: Text(
+            'Запрошенный файл ${isFound ? 'найден' : 'не найден'}: $message',
+          ),
         ),
       );
     }
 
-    return isFound;
-  }
-
-  void messageGot(Message message, Socket sender) {
-    // Если сообщение нам, обрабатываем его
-    if (message.to == null || message.to == id) {
-      // Если это запрос на подключение
-      if (message is ConnectMessage) {
-        bool alreadyConnected = _server.clients.any(
-          (client) => client.id == message.from,
-        );
-
-        print("Запрос на подключение. Уже подключен: $alreadyConnected");
-
-        // Если ещё не подключен, добавляем клиента в список
-        if (!alreadyConnected) {
-          ClientInfo client = ClientInfo(
-            id: message.from,
-            port: message.data,
-            socket: sender,
-          );
-          _server.clients.add(client);
-
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Подключился к ${message.from}')),
-          );
-
-          // Также отправляем обратный ответ
-          ConnectMessage connectMessage = ConnectMessage(
-            from: id,
-            to: message.from,
-            data: port,
-          );
-
-          sender.add(connectMessage.encode());
-        }
-      }
-      // Если это запрос файла
-      else if (message is RequestMessage) {
-        bool containsFile = _bloomFilter.hasFile(message.data);
-
-        if (containsFile){
-          containsFile = false;
-          for (final hashedFile in _files.value) {
-            if (hashedFile.hash == message.data) {
-              containsFile = true;
-              break;
-            }
-          }
-        }
-        
-        // Если имеем файл, возвращаем его хэш
-        if (containsFile) {
-          final answer = AnswerMessage(
-            from: id,
-            to: message.from,
-            data: message.data,
-          );
-          sender.add(answer.encode());
-        }
-        // Если файла нет, возвращаем список имеющихся узлов для продолжения поиска
-        else {
-          final answer = AnswerMessage(
-            from: id,
-            to: message.from,
-            data: _server.clients.map((client) => client.port).toList(),
-          );
-          sender.add(answer.encode());
-        }
-      }
-      // Если это ответ
-      else if (message is AnswerMessage) {
-        // Если мы ожидаем ответ
-        if (_completer != null && _expectedRequest != null) {
-          // Если файл уже найден, заканчиваем поиск
-          if (_expectedRequest!.data == message.data) {
-            print("Файл ${_expectedRequest!.data} найден!");
-            _completer!.complete(message);
-            _completer = null;
-            _expectedRequest = null;
-          }
-          // Если вернулся список других узлов - опрашиваем уже их
-          else {
-            for (final peerPort in message.data.toString().split(', ')) {
-              connect(null, int.parse(peerPort));
-            }
-            
-            final newMessage = RequestMessage(
-              from: id,
-              data: _expectedRequest?.data,
-            );
-            _server.sendMessage(newMessage);
-          }
-        }
-      }
-    }
-    // Если сообщение не нам, игнорируем его
-    else {
-      print("Сообщение не нам, игнорируем");
-    }
-  }
-
-  Future<bool> connect(String? senderId, int port) async {
-    bool alreadyConnected = _server.clients.any(
-      (client) => client.port == port,
-    );
-
-    // Если уже подключен, возвращаемся
-    if (alreadyConnected) {
-      return true;
-    }
-
-    print(
-      "[Connect] Уже подключен: $alreadyConnected\n"
-      "${_server.clients.map((client) => client.port)}, порт: $port",
-    );
-
-    ConnectMessage connectMessage;
-    
-    if (senderId == null){
-      connectMessage = ConnectMessage(
-      from: id,
-      data: this.port,);
-    } else { 
-      connectMessage = ConnectMessage(
-      from: id,
-      to: senderId,
-      data: this.port,
-    );}
-
-    TcpClient? client = await TcpClient.startClient(this, port, connectMessage);
-    if (client != null) {
-      return true;
-    }
-    return false;
+    _completer = null;
+    _expectedRequest = null;
+    _askedPeers = _alreadyAskedPeers = null;
   }
 
   void addFileToBloomFilter(String fileHash) {
@@ -255,5 +221,5 @@ class Peer {
     print('Файл $fileHash добавлен в фильтр');
   }
 
-  bool keepSearching() => _server.clients.length < K;
+  bool _peersNeeded() => _peers.length < K;
 }

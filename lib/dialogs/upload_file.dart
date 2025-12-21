@@ -12,7 +12,7 @@ void uploadFiles(FilesList filesList, Peer peer) async {
     for (var file in result.files) {
       HashedFile hashedFile = await HashedFile.fromPath(file.path.toString());
       filesList.files.add(hashedFile);
-      
+
       peer.addFileToBloomFilter(hashedFile.hash);
     }
   } else {

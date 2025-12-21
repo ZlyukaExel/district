@@ -9,7 +9,7 @@ import 'package:flutter/material.dart';
 class HomePageState extends State<HomePage> {
   late final Peer peer;
   final filesList = FilesList();
-  final udpDiscovery = UdpDiscovery();
+  final udpDiscovery = UdpTransport();
 
   // На старте
   @override
@@ -26,7 +26,7 @@ class HomePageState extends State<HomePage> {
 
   Future<void> _startApp() async {
     peer = await Peer.create(context, filesList.files.list);
-    peer.startDiscovery();
+    peer.startTransport();
   }
 
   @override
