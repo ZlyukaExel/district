@@ -1,11 +1,62 @@
+import 'package:district/structures/client_info.dart';
 import 'package:district/structures/peer.dart';
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
 
-class CustomDrawer extends StatelessWidget {
+class CustomDrawer extends StatefulWidget {
   final Peer peer;
-  final BuildContext context;
 
-  const CustomDrawer({super.key, required this.context, required this.peer});
+  const CustomDrawer({
+    super.key,
+    required this.peer,
+  });
+
+  @override
+  State<CustomDrawer> createState() => _CustomDrawerState();
+}
+
+class _CustomDrawerState extends State<CustomDrawer> {
+  late TextEditingController _dirController;
+  late bool _isVisible;
+
+  ClientInfo get _clientInfo => peer.clientInfo;
+
+  Peer get peer => widget.peer;
+
+  @override
+  void initState() {
+    super.initState();
+    _dirController =
+        TextEditingController(text: _clientInfo.downloadDirectory);
+    _isVisible = _clientInfo.isVisible;
+  }
+
+  @override
+  void dispose() {
+    _dirController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickDirectory() async {
+    final path = await FilePicker.platform.getDirectoryPath();
+    if (path == null) return;
+
+    setState(() {
+      _dirController.text = path;
+      _clientInfo.downloadDirectory = path;
+    });
+
+    await _clientInfo.save();
+  }
+
+  Future<void> _toggleVisible(bool value) async {
+    setState(() {
+      _isVisible = value;
+      _clientInfo.isVisible = value;
+    });
+
+    await _clientInfo.save();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -16,9 +67,50 @@ class CustomDrawer extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
+            const Text(
               "Настройки",
               style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 24),
+
+            const Text(
+              "Папка для загрузок",
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 8),
+
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _dirController,
+                    readOnly: true,
+                    decoration: const InputDecoration(
+                      border: OutlineInputBorder(),
+                      hintText: 'Выберите папку...',
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                ElevatedButton(
+                  onPressed: _pickDirectory,
+                  child: const Text("Выбрать"),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 24),
+
+            Row(
+              children: [
+                Checkbox(
+                  value: _isVisible,
+                  onChanged: (v) {
+                    if (v != null) _toggleVisible(v);
+                  },
+                ),
+                const Text("Узел видим"),
+              ],
             ),
           ],
         ),

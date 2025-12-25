@@ -4,12 +4,14 @@ import 'package:district/widgets/file_list_element.dart';
 import 'package:flutter/material.dart';
 
 class FilesList extends StatelessWidget {
-  final NotifierList<HashedFile> files = NotifierList<HashedFile>();
+  final NotifierList<HashedFile> filesList;  
+
+  const FilesList({required this.filesList, super.key});
 
   @override
   Widget build(BuildContext context) {
     return ValueListenableBuilder<List<HashedFile>>(
-      valueListenable: files.list,
+      valueListenable: filesList,
       builder: (context, files, child) {
         return ListView.builder(
           itemCount: files.length,
@@ -18,7 +20,7 @@ class FilesList extends StatelessWidget {
             return FileListItem(
               file: file,
               onDismissed: () {
-                this.files.remove(file);
+                filesList.remove(file);
               },
             );
           },

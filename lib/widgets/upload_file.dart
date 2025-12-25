@@ -1,16 +1,20 @@
-import 'package:flutter/material.dart';
+import 'package:district/structures/hashed_file.dart';
+import 'package:district/structures/notifier_list.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:district/structures/peer.dart';
 
-class UploadFileButton extends StatelessWidget {
-  final VoidCallback onPressed;
+Future<void> uploadFiles(NotifierList<HashedFile> filesList, Peer peer) async {
+  FilePickerResult? result = await FilePicker.platform.pickFiles(
+    allowMultiple: true,
+  );
 
-  const UploadFileButton({super.key, required this.onPressed});
-
-  @override
-  Widget build(BuildContext context) {
-    return FloatingActionButton(
-      onPressed: onPressed,
-      tooltip: 'Выложить файл',
-      child: const Icon(Icons.add),
-    );
+  if (result != null) {
+    for (var file in result.files) {
+      HashedFile hashedFile = await HashedFile.fromPath(file.path.toString());
+      filesList.add(hashedFile); 
+      peer.addFileToBloomFilter(hashedFile.hash);
+    }
+  } else {
+    print('Выбор файла отменен');
   }
 }

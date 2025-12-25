@@ -9,8 +9,13 @@ Future<void> showHashInputDialog(
   void confirm() {
     final text = controller.text.trim();
     if (text.isNotEmpty) {
-      onConfirm(text);
+      if (!context.mounted) return;
+      
       Navigator.of(context).pop();
+      
+      onConfirm(text);
+      
+      controller.dispose();
     }
   }
 
@@ -26,19 +31,27 @@ Future<void> showHashInputDialog(
             border: OutlineInputBorder(),
           ),
           autofocus: true,
-          //onSubmitted: (_) => confirm(),
           textInputAction: TextInputAction.done,
+          onSubmitted: (_) => confirm(),
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
+            onPressed: () {
+              Navigator.of(context).pop();
+              controller.dispose();
+            },
             child: Text('Отменить'),
           ),
-          ElevatedButton(onPressed: confirm, child: Text('Принять')),
+          ElevatedButton(
+            onPressed: confirm,
+            child: Text('Принять'),
+          ),
         ],
       );
     },
   );
-
-  controller.dispose();
+  
+  if (!controller.text.isEmpty) {
+    controller.dispose();
+  }
 }

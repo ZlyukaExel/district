@@ -1,15 +1,20 @@
 import 'package:flutter/widgets.dart';
 
-class NotifierList<T> with ChangeNotifier {
-  final ValueNotifier<List<T>> list = ValueNotifier<List<T>>([]);
+class NotifierList<T> extends ValueNotifier<List<T>> {
+  NotifierList() : super([]);
 
   void add(T value) {
-    list.value = [...list.value, value];
+    this.value = [...this.value, value];  
   }
 
   void remove(T value) {
-    final currentItems = list.value;
+    final currentItems = List<T>.from(this.value);
     currentItems.remove(value);
-    list.value = [...currentItems];
+    this.value = currentItems;
+  }
+
+  @override
+  void dispose() {
+    super.dispose();
   }
 }
