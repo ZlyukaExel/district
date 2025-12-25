@@ -77,19 +77,23 @@ class Peer {
     _askedPeers = <String>{};
     _alreadyAskedPeers = <String>{id};
 
-    // Отправляем запросы всем узлам
     for (final peer in _peers) {
       message.to = peer;
       _udpTransport.send(message);
       _askedPeers!.add(peer);
     }
 
-    bool isFound = false;
-    String resultMessage = "Файл ищется...";
-
     _completer = Completer<Message?>();
     _expectedRequest = message;
 
+    _showMessage(false, "Поиск файла на узлах...");
+    
+    unawaited(_performFileSearch());
+
+    return false;
+  }
+
+  Future<void> _performFileSearch() async {
     try {
       Message? answer = 
           await _completer!.future
@@ -106,10 +110,9 @@ class Peer {
               });
 
       if (answer != null) {
-        isFound = true;
-        resultMessage = "Файл найден!";
+        _showMessage(true, "Файл найден!");
       } else {
-        resultMessage = "Файл не найден на известных узлах";
+        _showMessage(false, "Файл не найден на известных узлах");
       }
     } finally {
       _completer = null;
@@ -117,13 +120,9 @@ class Peer {
       _askedPeers = null;
       _alreadyAskedPeers = null;
     }
-
-    _showMessage(isFound, resultMessage);
-    return isFound;
   }
 
   void _showMessage(bool isFound, String message) {
-    // Проверяем, жив ли контекст
     if (!context.mounted) {
       print("Context not mounted, skipping snackbar");
       return;
@@ -149,20 +148,17 @@ class Peer {
     int port,
   ) async {
     try {
-      // Если это запрос на подключение
       if (message is ConnectMessage) {
         if (_peersNeeded()) {
           _peers.add(message.from);
           print("Узел ${message.from} подключился");
         }
       }
-      // Если это запрос файла
       else if (message is RequestMessage) {
         _showToast('Получено сообщение от ${message.from}');
 
         bool containsFile = hasFile(message.data);
 
-        // Если имеем файл, отправляем его
         if (containsFile) {
           final answer = AnswerMessage(
             from: id,
@@ -175,7 +171,6 @@ class Peer {
             sendFileToAddress(message.data, address, 9998),
           );
         }
-        // Если файла нет, возвращаем список имеющихся узлов
         else {
           final answer = AnswerMessage(
             from: id,
@@ -185,24 +180,20 @@ class Peer {
           _udpTransport.send(answer, address: address, port: port);
         }
       }
-      // Если это ответ
       else if (message is AnswerMessage) {
         _showToast('Получен ответ от ${message.from}');
 
-        // Если мы ожидаем ответ
         if (_completer != null &&
             !_completer!.isCompleted &&
             _expectedRequest != null &&
             _askedPeers!.contains(message.from)) {
           
-          // Если файл найден, заканчиваем поиск
           if (_expectedRequest!.data == message.data) {
             print("Файл ${_expectedRequest!.data} найден!");
             if (!_completer!.isCompleted) {
               _completer!.complete(message);
             }
           }
-          // Если вернулся список других узлов - опрашиваем их
           else {
             for (final peerId in message.data) {
               if (_alreadyAskedPeers!.contains(peerId)) {
@@ -216,7 +207,6 @@ class Peer {
             _askedPeers!.remove(message.from);
             _alreadyAskedPeers!.add(message.from);
 
-            // Если нет больше узлов для опроса
             if (_askedPeers!.isEmpty && _completer != null && !_completer!.isCompleted) {
               print("Все доступные узлы были опрошены");
               _completer!.complete(null);
@@ -244,13 +234,18 @@ class Peer {
   }
 
   void addFileToBloomFilter(String fileHash) {
-    _bloomFilter.addFile(fileHash);
-    _fileMetadata.put(fileHash, {
-      'hash': fileHash,
+    final normalizedHash = fileHash.toLowerCase().trim();
+    
+    _fileHashes.add(normalizedHash);
+    
+    _bloomFilter.addFile(normalizedHash);
+    _fileMetadata.put(normalizedHash, {
+      'hash': normalizedHash,
       'peer_id': id,
       'timestamp': DateTime.now().toIso8601String(),
     });
-    print('Файл $fileHash добавлен в фильтр');
+    print('Файл $normalizedHash добавлен в фильтр и _fileHashes');
+    print('Всего файлов в хранилище: ${_fileHashes.length}');
   }
 
   Future<bool> addFile(HashedFile hashedFile) async {
@@ -274,7 +269,13 @@ class Peer {
   }
 
   bool hasFile(String hashKey) {
-    return _fileHashes.contains(hashKey);
+    final normalizedHash = hashKey.toLowerCase().trim();
+    final exists = _fileHashes.contains(normalizedHash);
+    
+    print('Проверка файла "$normalizedHash": ${exists ? "✅ НАЙДЕН" : "❌ НЕ НАЙДЕН"}');
+    print('Имеющиеся хеши: $_fileHashes');
+    
+    return exists;
   }
 
   Future<void> sendFileToAddress(

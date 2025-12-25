@@ -6,52 +6,50 @@ Future<void> showHashInputDialog(
 ) async {
   final TextEditingController controller = TextEditingController();
 
-  void confirm() {
-    final text = controller.text.trim();
-    if (text.isNotEmpty) {
-      if (!context.mounted) return;
-      
-      Navigator.of(context).pop();
-      
-      onConfirm(text);
-      
-      controller.dispose();
-    }
-  }
-
-  await showDialog(
+  final String? result = await showDialog<String>(
     context: context,
     builder: (BuildContext dialogContext) {
       return AlertDialog(
-        title: Text('Введите хэш-ключ'),
+        title: const Text('Введите хэш-ключ'),
         content: TextField(
           controller: controller,
-          decoration: InputDecoration(
+          decoration: const InputDecoration(
             hintText: 'Хэш-ключ',
             border: OutlineInputBorder(),
           ),
           autofocus: true,
           textInputAction: TextInputAction.done,
-          onSubmitted: (_) => confirm(),
+          onSubmitted: (_) {
+            final text = controller.text.trim();
+            if (text.isNotEmpty) {
+              Navigator.of(dialogContext).pop(text);
+            }
+          },
         ),
         actions: [
           TextButton(
             onPressed: () {
-              Navigator.of(context).pop();
-              controller.dispose();
+              Navigator.of(dialogContext).pop();
             },
-            child: Text('Отменить'),
+            child: const Text('Отменить'),
           ),
           ElevatedButton(
-            onPressed: confirm,
-            child: Text('Принять'),
+            onPressed: () {
+              final text = controller.text.trim();
+              if (text.isNotEmpty) {
+                Navigator.of(dialogContext).pop(text);
+              }
+            },
+            child: const Text('Принять'),
           ),
         ],
       );
     },
   );
-  
-  if (!controller.text.isEmpty) {
-    controller.dispose();
+
+  controller.dispose();
+
+  if (result != null && result.isNotEmpty) {
+    onConfirm(result);
   }
 }
