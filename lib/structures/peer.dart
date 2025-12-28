@@ -86,7 +86,6 @@ class Peer {
     }
 
     bool isFound = false;
-    String resultMessage = "Ищем файл...";
 
     _completer = Completer<Message?>();
     _expectedRequest = message;
@@ -97,20 +96,20 @@ class Peer {
               .timeout(
                 Duration(seconds: 5),
                 onTimeout: () {
-                  print("Timeout: файл не найден");
+                  _showMessage(isFound, "превышено время ожидания");
                   return null;
                 },
               )
               .catchError((e) {
-                print("Ошибка при поиске файла: $e");
+                _showMessage(isFound, "ошибка при поиске файла: $e");
                 return null;
               });
 
       if (answer == null) {
-        resultMessage = "Файл не найден на известных узлах";
+        _showMessage(isFound, "файл не найден на известных узлах");
       } else {
         isFound = true;
-        resultMessage = "Файл найден!";
+        _showMessage(isFound, "успех!");
       }
     } finally {
       _completer = null;
@@ -119,7 +118,6 @@ class Peer {
       _alreadyAskedPeers = null;
     }
 
-    _showMessage(isFound, resultMessage);
     return isFound;
   }
 
@@ -152,7 +150,7 @@ class Peer {
     try {
       // Если это запрос на подключение
       if (message is ConnectMessage) {
-        if (_peersNeeded()) {
+        if (_peersNeeded() && !_peers.contains(message.from)) {
           _peers.add(message.from);
           print("Узел ${message.from} подключился");
         }

@@ -132,7 +132,7 @@ class UdpTransport {
         print(" Отправлен батч ${chunk.chunkIndex}. Выполняется задержка.");
         await Future.delayed(Duration(milliseconds: 10));
 
-        print('📤 Батч ${chunk.chunkIndex + 1}/${chunk.totalChunks} отправлен');
+        print(' Батч ${chunk.chunkIndex + 1}/${chunk.totalChunks} отправлен');
       }
 
       print(' Файл полностью отправлен');
