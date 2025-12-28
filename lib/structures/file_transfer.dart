@@ -57,7 +57,7 @@ class FileChunk {
     final buffer = BytesBuilder();
 
     // transferId
-    final transferIdBytes = transferId.padRight(64, '\0').codeUnits;
+    final transferIdBytes = transferId.padRight(64, '0').codeUnits;
     buffer.addByte(transferIdBytes.length);
     buffer.add(transferIdBytes);
 
@@ -92,7 +92,7 @@ class FileChunk {
     final transferIdLen = bytes[offset++];
     final transferIdBytes = bytes.sublist(offset, offset + transferIdLen);
     final transferId =
-        String.fromCharCodes(transferIdBytes).replaceAll('\0', '');
+        String.fromCharCodes(transferIdBytes).replaceAll('0', '');
     offset += transferIdLen;
 
     final chunkIndex = (bytes[offset] << 24) |

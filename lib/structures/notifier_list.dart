@@ -12,9 +12,4 @@ class NotifierList<T> extends ValueNotifier<List<T>> {
     currentItems.remove(value);
     this.value = currentItems;
   }
-
-  @override
-  void dispose() {
-    super.dispose();
-  }
 }

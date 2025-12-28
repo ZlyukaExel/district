@@ -4,7 +4,7 @@ import 'package:district/home/home_page.dart';
 import 'package:district/structures/peer.dart';
 import 'package:district/structures/hashed_file.dart';
 import 'package:district/structures/notifier_list.dart';
-import 'package:district/udp_discovery.dart';
+import 'package:district/udp_transport.dart';
 import 'package:district/widgets/drawer.dart';
 import 'package:district/widgets/files_list.dart';
 import 'package:flutter/material.dart';
@@ -12,7 +12,7 @@ import 'package:flutter/material.dart';
 class HomePageState extends State<HomePage> {
   Peer? peer;
   late final NotifierList<HashedFile> files; 
-  final udpDiscovery = UdpTransport();
+  final udpTransport = UdpTransport();
 
   @override
   void initState() {
@@ -62,7 +62,7 @@ class HomePageState extends State<HomePage> {
           FloatingActionButton(
             heroTag: "uploadButton",
             tooltip: "Выложить файл",
-            onPressed: () => uploadFiles(files, peer!),
+            onPressed: () => uploadFiles(peer!),
             child: Icon(Icons.upload),
           ),
           SizedBox(height: 10),

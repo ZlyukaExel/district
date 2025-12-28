@@ -14,10 +14,10 @@ class UdpTransport {
   final _fileTransferPort = 9998;
   final _timeout = 3;
 
-  late final Timer timer;
+  late final Timer _timer;
   late final RawDatagramSocket _socket;
   late final RawDatagramSocket _fileSocket;
-  late final Peer peer;
+  late final Peer _peer;
 
   // Хранилище для входящих файлов
   final Map<String, Map<int, FileChunk>> _incomingFiles = {};
@@ -40,7 +40,7 @@ class UdpTransport {
       );
       _fileSocket.broadcastEnabled = true;
 
-      this.peer = peer;
+      this._peer = peer;
 
       // Создаем запрос на подключение
       Message message = ConnectMessage(from: peer.id);
@@ -80,7 +80,7 @@ class UdpTransport {
       
 
       // Рекламируем этот узел
-      timer = Timer.periodic(Duration(seconds: _timeout), (Timer t) {
+      _timer = Timer.periodic(Duration(seconds: _timeout), (Timer t) {
         _socket.send(
           encodedMessage,
           InternetAddress(_broadcastIp),
@@ -93,7 +93,7 @@ class UdpTransport {
   }
 
   void stop() {
-  timer.cancel();
+  _timer.cancel();
   _socket.close();
   _fileSocket.close();
 }
@@ -111,6 +111,7 @@ class UdpTransport {
       _socket.send(encodedMessage, address, port);
     }
   }
+
  /// Отправка файла по адресу и порту
   Future<void> sendFile(
     String filePath,
@@ -119,14 +120,16 @@ class UdpTransport {
     int port,
   ) async {
     try {
-      print(' Начинаем отправку файла: $filePath');
+      print(' Начинаем отправку файла: $filePath   ${_socket.address} -> $address');
 
       final chunks = await FileReader.readFileAsChunks(filePath, transferId);
 
       for (final chunk in chunks) {
         final encodedChunk = chunk.encode();
+        
         _fileSocket.send(encodedChunk, address, port);
 
+        print(" Отправлен батч ${chunk.chunkIndex}. Выполняется задержка.");
         await Future.delayed(Duration(milliseconds: 10));
 
         print('📤 Батч ${chunk.chunkIndex + 1}/${chunk.totalChunks} отправлен');
@@ -187,7 +190,7 @@ class UdpTransport {
 
       final fileData = buffer.toBytes();
 
-      final downloadDir = peer.clientInfo.downloadDirectory;
+      final downloadDir = _peer.clientInfo.downloadDirectory;
       final fileName =
           'downloaded_${DateTime.now().millisecondsSinceEpoch}.bin';
       final filePath = '$downloadDir/$fileName';
@@ -205,11 +208,3 @@ class UdpTransport {
     }
   }
 }
-  
-  
-
-
- 
-
-
-

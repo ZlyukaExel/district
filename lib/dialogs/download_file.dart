@@ -50,8 +50,4 @@ Future<void> showHashInputDialog(
       );
     },
   );
-  
-  if (!controller.text.isEmpty) {
-    controller.dispose();
-  }
 }

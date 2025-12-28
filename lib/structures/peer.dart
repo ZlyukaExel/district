@@ -6,7 +6,8 @@ import 'package:district/structures/messages/answer_message.dart';
 import 'package:district/structures/messages/connect_message.dart';
 import 'package:district/structures/messages/message.dart';
 import 'package:district/structures/messages/request_message.dart';
-import 'package:district/udp_discovery.dart';
+import 'package:district/structures/notifier_list.dart';
+import 'package:district/udp_transport.dart';
 import 'package:flutter/material.dart';
 import 'package:district/structures/bloom_filter.dart';
 import 'package:district/structures/hash_table.dart';
@@ -15,12 +16,12 @@ import 'package:district/structures/client_info.dart';
 class Peer {
   late final String id;
   static final int K = 3;
-  late final BuildContext context;
+  late final BuildContext _context;
   final _udpTransport = UdpTransport();
   final _peers = <String>{};
   final BloomFilter _bloomFilter = BloomFilter(size: 50000, numHashes: 3);
   final HashTable<String, dynamic> _fileMetadata = HashTable<String, dynamic>();
-  late final ValueNotifier<List<HashedFile>> _files;
+  late final NotifierList<HashedFile> _files;
   late final ClientInfo clientInfo;
   final Set<String> _fileHashes = <String>{};
 
@@ -33,10 +34,10 @@ class Peer {
 
   static Future<Peer> create(
     BuildContext context,
-    ValueNotifier<List<HashedFile>> files,
+    NotifierList<HashedFile> files,
   ) async {
     Peer peer = Peer._();
-    peer.context = context;
+    peer._context = context;
     peer.id = generateRandomId(
       DateTime.now().microsecondsSinceEpoch.toString(),
     );
@@ -85,7 +86,7 @@ class Peer {
     }
 
     bool isFound = false;
-    String resultMessage = "Файл ищется...";
+    String resultMessage = "Ищем файл...";
 
     _completer = Completer<Message?>();
     _expectedRequest = message;
@@ -105,11 +106,11 @@ class Peer {
                 return null;
               });
 
-      if (answer != null) {
+      if (answer == null) {
+        resultMessage = "Файл не найден на известных узлах";
+      } else {
         isFound = true;
         resultMessage = "Файл найден!";
-      } else {
-        resultMessage = "Файл не найден на известных узлах";
       }
     } finally {
       _completer = null;
@@ -124,13 +125,13 @@ class Peer {
 
   void _showMessage(bool isFound, String message) {
     // Проверяем, жив ли контекст
-    if (!context.mounted) {
+    if (!_context.mounted) {
       print("Context not mounted, skipping snackbar");
       return;
     }
 
     try {
-      ScaffoldMessenger.of(context).showSnackBar(
+      ScaffoldMessenger.of(_context).showSnackBar(
         SnackBar(
           content: Text(
             'Файл ${isFound ? 'найден' : 'не найден'}: $message',
@@ -175,7 +176,7 @@ class Peer {
             sendFileToAddress(message.data, address, 9998),
           );
         }
-        // Если файла нет, возвращаем список имеющихся узлов
+        // Если у нас файла нет, возвращаем список имеющихся узлов
         else {
           final answer = AnswerMessage(
             from: id,
@@ -230,9 +231,9 @@ class Peer {
   }
 
   void _showToast(String message) {
-    if (!context.mounted) return;
+    if (!_context.mounted) return;
     try {
-      ScaffoldMessenger.of(context).showSnackBar(
+      ScaffoldMessenger.of(_context).showSnackBar(
         SnackBar(
           content: Text(message),
           duration: Duration(seconds: 1),
@@ -243,20 +244,10 @@ class Peer {
     }
   }
 
-  void addFileToBloomFilter(String fileHash) {
-    _bloomFilter.addFile(fileHash);
-    _fileMetadata.put(fileHash, {
-      'hash': fileHash,
-      'peer_id': id,
-      'timestamp': DateTime.now().toIso8601String(),
-    });
-    print('Файл $fileHash добавлен в фильтр');
-  }
-
-  Future<bool> addFile(HashedFile hashedFile) async {
+  void addFile(HashedFile hashedFile) {
     if (_fileHashes.contains(hashedFile.hash)) {
       print('Файл уже есть: ${hashedFile.path}');
-      return false;
+      return;
     }
 
     _files.value = [..._files.value, hashedFile];
@@ -270,12 +261,10 @@ class Peer {
     });
 
     print('Файл добавлен: ${hashedFile.path}');
-    return true;
+    return;
   }
 
-  bool hasFile(String hashKey) {
-    return _fileHashes.contains(hashKey);
-  }
+  bool hasFile(String hashKey) => _fileHashes.contains(hashKey);
 
   Future<void> sendFileToAddress(
     String fileHash,
