@@ -38,6 +38,7 @@ class FileTransferMetadata {
 
 /// Батч данных файла
 class FileChunk {
+  final String senderId;
   final String transferId;
   final int chunkIndex;
   final Uint8List data;
@@ -45,6 +46,7 @@ class FileChunk {
   final int totalChunks;
 
   FileChunk({
+    required this.senderId,
     required this.transferId,
     required this.chunkIndex,
     required this.data,
@@ -89,6 +91,10 @@ class FileChunk {
   static FileChunk decode(Uint8List bytes) {
     int offset = 0;
 
+    final senderIdBytes = bytes.sublist(offset, offset + 36);
+    final senderId = String.fromCharCodes(senderIdBytes).trim();
+    offset += 36;
+
     final transferIdLen = bytes[offset++];
     final transferIdBytes = bytes.sublist(offset, offset + transferIdLen);
     final transferId =
@@ -121,6 +127,7 @@ class FileChunk {
     final data = bytes.sublist(offset, offset + dataSize);
 
     return FileChunk(
+      senderId: senderId,
       transferId: transferId,
       chunkIndex: chunkIndex,
       data: data,
@@ -132,10 +139,11 @@ class FileChunk {
 
 /// Вспомогательный класс для чтения файла батчами
 class FileReader {
-  static const int CHUNK_SIZE = 8192; // 8KB на батч
+  static const int CHUNK_SIZE = 1024;//8192; // 8KB на батч
 
   static Future<List<FileChunk>> readFileAsChunks(
     String filePath,
+    String senderId,
     String transferId,
   ) async {
     final file = File(filePath);
@@ -151,6 +159,7 @@ class FileReader {
       final chunkHash = md5.convert(data).toString();
 
       chunks.add(FileChunk(
+        senderId: senderId,
         transferId: transferId,
         chunkIndex: chunkIndex,
         data: data,

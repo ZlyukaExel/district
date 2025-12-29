@@ -39,6 +39,7 @@ class UdpTransport {
         _fileTransferPort,
       );
       _fileSocket.broadcastEnabled = true;
+      _fileSocket.handleError((error) {print("Ошибка $error");});
 
       this._peer = peer;
 
@@ -92,7 +93,6 @@ class UdpTransport {
   _fileSocket.close();
 }
 
-
   void send(Message message, {InternetAddress? address, int? port}) {
     final encodedMessage = message.encode();
     if (address == null || port == null) {
@@ -107,33 +107,67 @@ class UdpTransport {
   }
 
  /// Отправка файла по адресу и порту
-  Future<void> sendFile(
-    String filePath,
-    String transferId,
-    InternetAddress address,
-    int port,
-  ) async {
-    try {
-      print(' Начинаем отправку файла: $filePath   ${_socket.address} -> $address');
+  /// Отправка файла по адресу и порту
+Future<void> sendFile(
+  String filePath,
+  String transferId,
+  InternetAddress address,
+  int port,
+) async {
+  try {
+    print('  Начинаем отправку файла: $filePath');
 
-      final chunks = await FileReader.readFileAsChunks(filePath, transferId);
+    // Проверяем существование файла
+    final file = File(filePath);
+    if (!await file.exists()) {
+      throw Exception('  Файл не найден: $filePath');
+    }
 
-      for (final chunk in chunks) {
-        final encodedChunk = chunk.encode();
-        
-        _fileSocket.send(encodedChunk, address, port);
+    final chunks = await FileReader.readFileAsChunks(filePath, _peer.id, transferId);
 
-        print(" Отправлен батч ${chunk.chunkIndex}. Выполняется задержка.");
-        await Future.delayed(Duration(milliseconds: 10));
+    if (chunks.isEmpty) {
+      print('  Передан пустой файл');
+      return;
+    }
 
-        print(' Батч ${chunk.chunkIndex + 1}/${chunk.totalChunks} отправлен');
+    print('  Прочитано ${chunks.length} чанков');
+
+    for (final chunk in chunks) {
+      final encodedChunk = chunk.encode();
+      
+      if (encodedChunk.isEmpty) {
+        print('  Передан пустой чанк ${chunk.chunkIndex}');
+        continue;
       }
 
-      print(' Файл полностью отправлен');
-    } catch (e) {
-      print(' Ошибка при отправке файла: $e');
+      print('  Отправляем батч ${chunk.chunkIndex} (${encodedChunk.length} байт)');
+      
+      // Uint8List data = utf8.encode('debug');
+      // _fileSocket.send(data, address, port); // Это был дебаг
+      // await Future.delayed(Duration(seconds: 3));
+
+      try {
+
+        final bytesSent = _fileSocket.send(encodedChunk, address, port);
+        if (bytesSent < encodedChunk.length) {
+          print('  Отправлены не все байты: $bytesSent/${encodedChunk.length}');
+        }
+        
+        print('  Отправлен батч ${chunk.chunkIndex}. Выполняется задержка'); 
+        await Future.delayed(Duration(milliseconds: 10)); // Тут все виснет и вылезает ошибка
+
+        print('  Батч ${chunk.chunkIndex}/${chunk.totalChunks} успешно отправлен');
+      } catch (e) {
+        print('  Ошибка при отправке батча ${chunk.chunkIndex}: ${e}');
+      }
     }
+
+    print(' Файл полностью отправлен');
+  } catch (e) {
+    print(' Ошибка при отправке файла: $e');
+    rethrow;
   }
+}
 
   /// Обработка входящего батча файла
   void _handleFileChunk(
@@ -143,6 +177,11 @@ class UdpTransport {
   ) {
     try {
       final chunk = FileChunk.decode(Uint8List.fromList(data));
+
+      if (chunk.senderId == _peer.id) {
+        print("Прочитан свой же пакет, игнорируем");
+        return;
+      }
 
       _incomingFiles.putIfAbsent(chunk.transferId, () => {});
 
