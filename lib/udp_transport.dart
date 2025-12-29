@@ -43,8 +43,7 @@ class UdpTransport {
       this._peer = peer;
 
       // Создаем запрос на подключение
-      Message message = ConnectMessage(from: peer.id);
-      final encodedMessage = message.encode();
+      Message connectMessage = ConnectMessage(from: peer.id);
 
       // Слушаем запросы
       _socket.listen((RawSocketEvent event) {
@@ -77,15 +76,10 @@ class UdpTransport {
         }
       });
 
-      
-
       // Рекламируем этот узел
       _timer = Timer.periodic(Duration(seconds: _timeout), (Timer t) {
-        _socket.send(
-          encodedMessage,
-          InternetAddress(_broadcastIp),
-          _broadcastPort,
-        );
+        send(connectMessage);
+        //print("advertisig");
       });
     } catch (e) {
       print('Ошибка создания UDP сокета: $e');

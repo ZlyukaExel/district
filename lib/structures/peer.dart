@@ -152,7 +152,8 @@ class Peer {
       if (message is ConnectMessage) {
         if (_peersNeeded() && !_peers.contains(message.from)) {
           _peers.add(message.from);
-          print("Узел ${message.from} подключился");
+          print("Подключились к узлу ${message.from}");
+          _showToast("Подключились к узлу ${message.from}");
         }
       }
       // Если это запрос файла
