@@ -1,6 +1,6 @@
-import 'package:district/structures/hashed_file.dart';
+import 'package:district/file/hashed_file.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:district/structures/peer.dart';
+import 'package:district/peer/peer.dart';
 
 Future<void> uploadFiles(Peer peer) async {
   FilePickerResult? result = await FilePicker.platform.pickFiles(

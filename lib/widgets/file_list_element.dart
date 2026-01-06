@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:district/structures/hashed_file.dart';
+import 'package:district/file/hashed_file.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart';
 

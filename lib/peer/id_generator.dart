@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
 
-String generateRandomId(String input, {int length = 32}) {
+String generateRandomId(String input, {int length = 64}) {
   final now = DateTime.now();
 
   // Формат: YYYY-MM-DD_HH-mm-ss

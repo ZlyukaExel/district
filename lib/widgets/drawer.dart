@@ -1,15 +1,12 @@
-import 'package:district/structures/client_info.dart';
-import 'package:district/structures/peer.dart';
+import 'package:district/peer/client_info.dart';
+import 'package:district/peer/peer.dart';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 
 class CustomDrawer extends StatefulWidget {
   final Peer peer;
 
-  const CustomDrawer({
-    super.key,
-    required this.peer,
-  });
+  const CustomDrawer({super.key, required this.peer});
 
   @override
   State<CustomDrawer> createState() => _CustomDrawerState();
@@ -26,8 +23,7 @@ class _CustomDrawerState extends State<CustomDrawer> {
   @override
   void initState() {
     super.initState();
-    _dirController =
-        TextEditingController(text: _clientInfo.downloadDirectory);
+    _dirController = TextEditingController(text: _clientInfo.downloadDirectory);
     _isVisible = _clientInfo.isVisible;
   }
 

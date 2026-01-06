@@ -1,10 +1,10 @@
-import 'package:district/structures/messages/message.dart';
+import 'package:district/message/message.dart';
 
-class ConnectMessage extends Message {
-  ConnectMessage({required super.from, super.to, super.data});
+class AdvertisingMessage extends Message {
+  AdvertisingMessage({required super.from, super.to, super.data});
 
-  factory ConnectMessage.fromJson(Map<String, dynamic> json) {
-    return ConnectMessage(
+  factory AdvertisingMessage.fromJson(Map<String, dynamic> json) {
+    return AdvertisingMessage(
       from: json['from'] as String,
       to: json['to'] as String?,
       data: json['data'],

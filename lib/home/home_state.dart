@@ -1,8 +1,8 @@
-import 'package:district/dialogs/download_file.dart';
-import 'package:district/dialogs/upload_file.dart';
+import 'package:district/dialog/download_file.dart';
+import 'package:district/dialog/upload_file.dart';
 import 'package:district/home/home_page.dart';
-import 'package:district/structures/peer.dart';
-import 'package:district/structures/hashed_file.dart';
+import 'package:district/peer/peer.dart';
+import 'package:district/file/hashed_file.dart';
 import 'package:district/structures/notifier_list.dart';
 import 'package:district/udp_transport.dart';
 import 'package:district/widgets/drawer.dart';
@@ -11,19 +11,19 @@ import 'package:flutter/material.dart';
 
 class HomePageState extends State<HomePage> {
   Peer? peer;
-  late final NotifierList<HashedFile> files; 
+  late final NotifierList<HashedFile> files;
   final udpTransport = UdpTransport();
 
   @override
   void initState() {
     super.initState();
-    files = NotifierList<HashedFile>();  
+    files = NotifierList<HashedFile>();
     _startApp();
   }
 
   Future<void> _startApp() async {
     try {
-      peer = await Peer.create(context, files); 
+      peer = await Peer.create(context, files);
       peer!.startTransport();
       setState(() {});
     } catch (e) {
@@ -33,7 +33,7 @@ class HomePageState extends State<HomePage> {
 
   @override
   void dispose() {
-    files.dispose();  
+    files.dispose();
     super.dispose();
   }
 
@@ -54,7 +54,7 @@ class HomePageState extends State<HomePage> {
         title: Text("district", style: TextStyle(fontSize: 16)),
         backgroundColor: const Color.fromARGB(255, 255, 255, 0),
       ),
-      body: FilesList(filesList: files),  
+      body: FilesList(filesList: files),
       drawer: CustomDrawer(peer: peer!),
       floatingActionButton: Column(
         mainAxisAlignment: MainAxisAlignment.end,
