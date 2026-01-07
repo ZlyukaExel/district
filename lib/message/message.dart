@@ -6,6 +6,7 @@ import 'package:district/message/node_answer_message.dart';
 import 'package:district/message/store_message.dart';
 import 'package:district/message/find_node_message.dart';
 import 'package:district/message/value_answer_message.dart';
+import 'package:district/message/ack_message.dart'; 
 
 enum MessageType {
   connect,
@@ -14,6 +15,7 @@ enum MessageType {
   findValue,
   nodeAnswer,
   valueAnswer,
+  ack, // Новый тип
 }
 
 Message decodeMessage(Uint8List bytes) {
@@ -34,6 +36,8 @@ Message decodeMessage(Uint8List bytes) {
       return NodeAnswerMessage.fromJson(json);
     case MessageType.valueAnswer:
       return ValueAnswerMessage.fromJson(json);
+    case MessageType.ack:
+      return AckMessage.fromJson(json);
   }
 }
 
