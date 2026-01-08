@@ -89,7 +89,6 @@ class Peer {
 
       // Если файл найден, сохраняем ответ
       if (msg.data is String && hashKey == msg.data) {
-        print("Файл $hashKey найден!");
         result = msg;
       }
       // Если вернулся список других узлов - добавляем их в список для допроса
@@ -185,7 +184,7 @@ class Peer {
           );
           _udpTransport.send(answer, address: address, port: port);
 
-          //unawaited(sendFileToAddress(message.data, address, 9998)); =============================================================
+          unawaited(sendFileToAddress(message.data, address, 9998));
         }
         // Если мы ничего не знаем о файле, возвращаем список ближайших узлов
         else {
@@ -323,12 +322,19 @@ class Peer {
     //print("Обновляем узлы\nТекущее время: ${DateTime.now()}");
 
     DateTime now = DateTime.now();
+    List<dynamic> keysToRemove = [];
+
     for (final peer in _peers.entries) {
       //print("Последнее время появления узла: ${DateTime.now()}\nРазница: ${now.difference(peer.value).inSeconds}");
       if (now.difference(peer.value).inSeconds > _peerLifetime) {
         print("Узел ${peer.key} давно не появлялся, удаляем");
-        _peers.remove(peer);
+        keysToRemove.add(peer.key);
       }
+    }
+
+    // Now remove all collected keys
+    for (var key in keysToRemove) {
+      _peers.remove(key);
     }
   }
 
