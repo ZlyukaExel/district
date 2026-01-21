@@ -179,24 +179,40 @@ class UdpTransport {
     try {
       final chunks = _incomingFiles[transferId]!;
       final sortedKeys = chunks.keys.toList()..sort();
+      
+      // Берем имя файла из первого чанка 
+      String fileName = chunks[0]?.fileName ?? 'unknown_file';
+      
+      // Если вдруг пришло пустое имя, генерируем временное 
+      if (fileName.isEmpty) {
+         fileName = 'rec_${DateTime.now().millisecondsSinceEpoch}.bin';
+      }
+
       final buffer = BytesBuilder();
       for (var k in sortedKeys) buffer.add(chunks[k]!.data);
 
-      final fileName = 'rec_${DateTime.now().millisecondsSinceEpoch}.jpg';
       final path = '${_peer.clientInfo.downloadDirectory}/$fileName';
 
-      final file = File(path);
+      File file = File(path);
+      if (await file.exists()) {
+        final nameWithoutExt = fileName.contains('.') ? fileName.split('.').first : fileName;
+        final ext = fileName.contains('.') ? fileName.split('.').last : 'bin';
+        final newName = '${nameWithoutExt}_${DateTime.now().millisecondsSinceEpoch}.$ext';
+        file = File('${_peer.clientInfo.downloadDirectory}/$newName');
+      }
+
       await file.create(recursive: true);
       await file.writeAsBytes(buffer.toBytes());
 
-      print("!!! ФАЙЛ СОХРАНЕН: $path !!!");
-      _peer.showToast("Файл сохранен: $fileName");
+      print("!!! ФАЙЛ СОХРАНЕН: ${file.path} !!!");
+      _peer.showToast("Файл сохранен: ${file.uri.pathSegments.last}");
 
       _incomingFiles.remove(transferId);
     } catch (e) {
       print("Ошибка записи файла: $e");
     }
   }
+
 
   Future<String?> getLocalIpAddress() async {
     // 1. Получаем список всех сетевых интерфейсов на устройстве
@@ -211,7 +227,7 @@ class UdpTransport {
         if (address.type == InternetAddressType.IPv4) {
           final ip = address.address;
 
-          // 3. Выбор "правильного" IP, если интерфейсов несколько (Wi-Fi, Ethernet, VPN, VM)
+          // 3. Выбор правильного IP, если интерфейсов несколько (Wi-Fi, Ethernet, VPN, VM)
           // Мы ищем адреса из приватных диапазонов (LAN): 192.168.x.x, 10.x.x.x, 172.16.x.x
           if (ip.startsWith('192.168.0') ||
               ip.startsWith('192.168.1') ||

@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:typed_data';
+import 'dart:convert'; 
 import 'package:crypto/crypto.dart';
 
 class FileChunk {
@@ -9,6 +10,7 @@ class FileChunk {
   final Uint8List data;
   final String chunkHash;
   final int totalChunks;
+  final String fileName; 
 
   FileChunk({
     required this.senderId,
@@ -17,19 +19,21 @@ class FileChunk {
     required this.data,
     required this.chunkHash,
     required this.totalChunks,
+    required this.fileName, 
   });
 
   Uint8List encode() {
     final buffer = BytesBuilder();
+    
     // 1. Sender ID (36 байт)
     buffer.add(senderId.padRight(36, ' ').substring(0, 36).codeUnits);
     
-    // 2. Transfer ID Len + Body
+    // 2. Transfer ID
     final trIdBytes = transferId.codeUnits;
     buffer.addByte(trIdBytes.length);
     buffer.add(trIdBytes);
     
-    // 3. Ints
+    // 3. Ints (Index + Total)
     buffer.addByte((chunkIndex >> 24) & 0xFF);
     buffer.addByte((chunkIndex >> 16) & 0xFF);
     buffer.addByte((chunkIndex >> 8) & 0xFF);
@@ -45,7 +49,15 @@ class FileChunk {
     buffer.addByte(hBytes.length);
     buffer.add(hBytes);
     
-    // 5. Data
+    // 5. FileName 
+    final nameBytes = utf8.encode(fileName);
+    buffer.addByte((nameBytes.length >> 24) & 0xFF); 
+    buffer.addByte((nameBytes.length >> 16) & 0xFF);
+    buffer.addByte((nameBytes.length >> 8) & 0xFF);
+    buffer.addByte(nameBytes.length & 0xFF);
+    buffer.add(nameBytes);
+
+    // 6. Data
     final dSize = data.length;
     buffer.addByte((dSize >> 24) & 0xFF);
     buffer.addByte((dSize >> 16) & 0xFF);
@@ -76,6 +88,12 @@ class FileChunk {
     final chunkHash = String.fromCharCodes(bytes.sublist(offset, offset + hashLen));
     offset += hashLen;
 
+    // Читаем FileName
+    final nameLen = (bytes[offset] << 24) | (bytes[offset + 1] << 16) | (bytes[offset + 2] << 8) | bytes[offset + 3];
+    offset += 4;
+    final fileName = utf8.decode(bytes.sublist(offset, offset + nameLen));
+    offset += nameLen;
+
     final dataSize = (bytes[offset] << 24) | (bytes[offset + 1] << 16) | (bytes[offset + 2] << 8) | bytes[offset + 3];
     offset += 4;
 
@@ -88,17 +106,19 @@ class FileChunk {
       data: data,
       chunkHash: chunkHash,
       totalChunks: totalChunks,
+      fileName: fileName,
     );
   }
 }
 
 class FileReader {
-  // 1024 байта - безопасный размер для UDP
   static const int CHUNK_SIZE = 1024; 
 
   static Stream<FileChunk> readFileStrictly(
       String filePath, String senderId, String transferId) async* {
     final file = File(filePath);
+    final fileName = file.uri.pathSegments.last; // Получаем имя файла из пути
+    
     final raf = await file.open(mode: FileMode.read);
     final fileSize = await file.length();
     final totalChunks = (fileSize / CHUNK_SIZE).ceil();
@@ -115,6 +135,7 @@ class FileReader {
           data: data,
           chunkHash: chunkHash,
           totalChunks: totalChunks,
+          fileName: fileName, 
         );
       }
     } finally {
