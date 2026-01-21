@@ -21,12 +21,13 @@ class Peer {
   late final String id;
   final int K = 20;
   late final BuildContext _context;
-  final _udpTransport = UdpTransport();
+  UdpTransport? _udpTransport;
   final _peers = Map<String, DateTime>();
   final BloomFilter _bloomFilter = BloomFilter(size: 50000, numHashes: 3);
   final HashTable<String, String> _fileMetadata = HashTable<String, String>();
   late final NotifierList<HashedFile> _files;
   late final ClientInfo clientInfo;
+  late final Function(Widget) _updateFloatWidget;
 
   Function? _findNodeCallback;
   Function? _findValueCallback;
@@ -40,6 +41,7 @@ class Peer {
   static Future<Peer> create(
     BuildContext context,
     NotifierList<HashedFile> files,
+    Function(Widget) updateFloatWidget,
   ) async {
     Peer peer = Peer._();
     peer._context = context;
@@ -58,11 +60,19 @@ class Peer {
       peer._fileMetadata.put(hashedFile.hash, peer.id);
     }
 
+    peer._udpTransport = new UdpTransport(updateFloatWidget);
+    peer._updateFloatWidget = updateFloatWidget;
+
     return peer;
   }
 
   void startTransport() {
-    _udpTransport.start(this);
+    _udpTransport = new UdpTransport(_updateFloatWidget);
+    _udpTransport!.start(this);
+  }
+
+  void stopTransport() {
+    _udpTransport!.stop();
   }
 
   Future<bool> requestFile(String hashKey) async {
@@ -117,7 +127,7 @@ class Peer {
         // Отправляем запрос на новый узел
         hasNew = true;
         message.to = peer;
-        _udpTransport.send(message);
+        _udpTransport!.send(message);
         checkedPeers.add(peer);
       }
 
@@ -155,6 +165,8 @@ class Peer {
         // Если уже подключены, обновляем время
         if (_peers.containsKey(message.from)) {
           _peers[message.from] = DateTime.now();
+          // print("Обновили время узла ${message.from}");
+          // showToast("Обновили время узла ${message.from}");
         }
         // Если нет, подключаемся
         else if (_peersNeeded()) {
@@ -182,7 +194,7 @@ class Peer {
             to: message.from,
             data: message.data,
           );
-          _udpTransport.send(answer, address: address, port: port);
+          _udpTransport!.send(answer, address: address, port: port);
 
           unawaited(sendFileToAddress(message.data, address, 9998));
         }
@@ -202,7 +214,7 @@ class Peer {
             to: message.from,
             data: serialized,
           );
-          _udpTransport.send(answer, address: address, port: port);
+          _udpTransport!.send(answer, address: address, port: port);
         }
       }
       // Если это поиск ближайшего узла
@@ -217,7 +229,7 @@ class Peer {
           to: message.from,
           data: serializedClosestPeers,
         );
-        _udpTransport.send(answer, address: address, port: port);
+        _udpTransport!.send(answer, address: address, port: port);
       }
       // Если это ответ по поводу узла
       else if (message is ValueAnswerMessage) {
@@ -310,7 +322,7 @@ class Peer {
 
       print('Начинаем передачу файла: ${targetFile.path}');
 
-      await _udpTransport.sendFile(targetFile.path, transferId, address, port);
+      await _udpTransport!.sendFile(targetFile.path, transferId, address, port);
     } catch (e) {
       print('Ошибка при отправке файла: $e');
     }
@@ -325,9 +337,13 @@ class Peer {
     List<dynamic> keysToRemove = [];
 
     for (final peer in _peers.entries) {
-      //print("Последнее время появления узла: ${DateTime.now()}\nРазница: ${now.difference(peer.value).inSeconds}");
+      // print(
+      //   "Последнее время появления узла: ${DateTime.now()}\nРазница: ${now.difference(peer.value).inSeconds}",
+      // );
+      //showToast("Разница: ${now.difference(peer.value).inSeconds}");
       if (now.difference(peer.value).inSeconds > _peerLifetime) {
         print("Узел ${peer.key} давно не появлялся, удаляем");
+        showToast("Узел ${peer.key} давно не появлялся, удаляем");
         keysToRemove.add(peer.key);
       }
     }
@@ -349,7 +365,7 @@ class Peer {
         continue;
       }
       writeMessage.to = peer;
-      _udpTransport.send(writeMessage);
+      _udpTransport!.send(writeMessage);
       print("Записываем файл $fileHash на ближайший узел $peer");
     }
   }
@@ -396,7 +412,7 @@ class Peer {
         hasNew = true;
         askedPeers.add(peer);
         nodeRequest.to = peer;
-        _udpTransport.send(nodeRequest);
+        _udpTransport!.send(nodeRequest);
       }
 
       // Ожидаем ответ

@@ -7,6 +7,9 @@ import 'package:district/message/ack_message.dart';
 import 'package:district/message/message.dart';
 import 'package:district/peer/peer.dart';
 import 'package:district/file/file_transfer.dart';
+import 'package:district/widgets/download_bar.dart';
+import 'package:district/widgets/file_buttons.dart';
+import 'package:flutter/material.dart';
 
 class UdpTransport {
   String? _broadcastIp;
@@ -16,6 +19,7 @@ class UdpTransport {
   late final RawDatagramSocket _socket; // JSON (Сигналы + ACK)
   late final RawDatagramSocket _fileSocket; // Binary (Данные)
   late final Peer _peer;
+  late final Function(Widget) _updateFloatWidget;
   Timer? _advertTimer;
 
   // Хранилище входящих кусков
@@ -23,6 +27,10 @@ class UdpTransport {
 
   // Для ожидания ACK (TransferID -> ChunkIndex)
   Completer<void>? _currentAckCompleter;
+
+  UdpTransport(Function(Widget) updateFloatWidget) {
+    _updateFloatWidget = updateFloatWidget;
+  }
 
   Future<void> start(Peer peer) async {
     _peer = peer;
@@ -54,7 +62,8 @@ class UdpTransport {
 
     print("UDP Transport запущен. ID: ${peer.id}");
 
-    _advertTimer = Timer.periodic(Duration(seconds: 3), (t) {
+    _advertTimer = Timer.periodic(Duration(seconds: 5), (t) {
+      //peer.showToast("Отправляю объявление");
       send(AdvertisingMessage(from: peer.id));
     });
   }
@@ -64,7 +73,14 @@ class UdpTransport {
     if (address != null && port != null) {
       _socket.send(data, address, port);
     } else {
-      _socket.send(data, InternetAddress(_broadcastIp!), _broadcastPort);
+      int res = _socket.send(
+        data,
+        InternetAddress(_broadcastIp!),
+        _broadcastPort,
+      );
+      if (res == 0) {
+        _peer.showToast("Не удалось отправить сообщение");
+      }
     }
   }
 
@@ -165,6 +181,10 @@ class UdpTransport {
       _incomingFiles.putIfAbsent(chunk.transferId, () => {});
       if (!_incomingFiles[chunk.transferId]!.containsKey(chunk.chunkIndex)) {
         _incomingFiles[chunk.transferId]![chunk.chunkIndex] = chunk;
+
+        double progress =
+            _incomingFiles[chunk.transferId]!.length / chunk.totalChunks;
+        _updateFloatWidget(new DownloadBar(value: progress));
       }
 
       if (_incomingFiles[chunk.transferId]!.length == chunk.totalChunks) {
@@ -182,7 +202,7 @@ class UdpTransport {
       final buffer = BytesBuilder();
       for (var k in sortedKeys) buffer.add(chunks[k]!.data);
 
-      final fileName = 'rec_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final fileName = 'rec_${DateTime.now().millisecondsSinceEpoch}.apk';
       final path = '${_peer.clientInfo.downloadDirectory}/$fileName';
 
       final file = File(path);
@@ -193,6 +213,8 @@ class UdpTransport {
       _peer.showToast("Файл сохранен: $fileName");
 
       _incomingFiles.remove(transferId);
+
+      _updateFloatWidget(new FileButtons(peer: _peer));
     } catch (e) {
       print("Ошибка записи файла: $e");
     }
