@@ -16,14 +16,15 @@ class UdpTransport {
   final _broadcastPort = 9999;
   final _fileTransferPort = 9998;
 
-  late final RawDatagramSocket _socket; // JSON (Сигналы + ACK)
-  late final RawDatagramSocket _fileSocket; // Binary (Данные)
+  late final RawDatagramSocket _socket; 
+  late final RawDatagramSocket _fileSocket;
   late final Peer _peer;
   late final Function(Widget) _updateFloatWidget;
   Timer? _advertTimer;
 
   // Хранилище входящих кусков
   final Map<String, Map<int, FileChunk>> _incomingFiles = {};
+  final Map<String, Timer> _cleanupTimers = {};
 
   // Для ожидания ACK (TransferID -> ChunkIndex)
   Completer<void>? _currentAckCompleter;
@@ -190,6 +191,13 @@ class UdpTransport {
       if (_incomingFiles[chunk.transferId]!.length == chunk.totalChunks) {
         _saveFile(chunk.transferId);
       }
+
+      _cleanupTimers[chunk.transferId]?.cancel();
+
+    _cleanupTimers[chunk.transferId] = Timer(Duration(seconds: 5), () {
+      _cancelDownload(chunk.transferId);
+      _peer.showToast("Операция завершена: таймаут");
+    });
     } catch (e) {
       print("Ошибка обработки пакета файла: $e");
     }
@@ -230,12 +238,17 @@ class UdpTransport {
       print("!!! ФАЙЛ СОХРАНЕН: ${file.path} !!!");
       _peer.showToast("Файл сохранен: ${file.uri.pathSegments.last}");
 
-      _incomingFiles.remove(transferId);
-
-      _updateFloatWidget(new FileButtons(peer: _peer));
+      _cancelDownload(transferId);
     } catch (e) {
       print("Ошибка записи файла: $e");
     }
+  }
+
+  void _cancelDownload(String transferId) {
+    _incomingFiles.remove(transferId);
+      _cleanupTimers[transferId]?.cancel();
+      _cleanupTimers.remove(transferId);
+      _updateFloatWidget(new FileButtons(peer: _peer,));
   }
 
   Future<String?> getLocalIpAddress() async {

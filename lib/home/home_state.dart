@@ -69,7 +69,7 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
       peer!.startTransport();
       peer!.showToast("Перезапускаем транспорт");
     } else if (state == AppLifecycleState.paused) {
-      peer!.stopTransport();
+      peer?.stopTransport();
     }
   }
 
