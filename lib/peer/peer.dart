@@ -33,7 +33,7 @@ class Peer {
   Function? _findValueCallback;
 
   Peer._() {
-    Timer.periodic(Duration(seconds: 10), (timer) {
+    Timer.periodic(Duration(seconds: 5), (timer) {
       updatePeers();
     });
   }
@@ -67,6 +67,7 @@ class Peer {
   }
 
   void startTransport() {
+    stopTransport();
     _udpTransport = new UdpTransport(_updateFloatWidget);
     _udpTransport!.start(this);
   }
@@ -328,7 +329,7 @@ class Peer {
     }
   }
 
-  final int _peerLifetime = 20;
+  final int _peerLifetime = 7;
 
   void updatePeers() {
     //print("Обновляем узлы\nТекущее время: ${DateTime.now()}");

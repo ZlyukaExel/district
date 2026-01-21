@@ -192,6 +192,7 @@ class UdpTransport {
       }
     } catch (e) {
       print("Ошибка обработки пакета файла: $e");
+      _updateFloatWidget(new FileButtons(peer: _peer));
     }
   }
 
@@ -235,6 +236,7 @@ class UdpTransport {
       _updateFloatWidget(new FileButtons(peer: _peer));
     } catch (e) {
       print("Ошибка записи файла: $e");
+      _updateFloatWidget(new FileButtons(peer: _peer));
     }
   }
 
