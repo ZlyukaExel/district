@@ -73,7 +73,7 @@ class Peer {
     // Если нет знакомых узлов, даже не проверяем
     if (_peers.isEmpty) {
       print("Нет знакомых узлов");
-      _showToast("Файл не найден: нет знакомых узлов");
+      showToast("Файл не найден: нет знакомых узлов");
       return false;
     }
 
@@ -135,7 +135,7 @@ class Peer {
     print(
       "Файл $hashKey ${result != null ? 'найден' : 'не найден на известных узлах'}",
     );
-    _showToast(
+    showToast(
       result != null ? 'Файл найден' : 'Файл не найден на известных узлах',
     );
 
@@ -160,12 +160,12 @@ class Peer {
         else if (_peersNeeded()) {
           _peers[message.from] = DateTime.now();
           print("Подключились к узлу ${message.from}");
-          _showToast("Подключились к узлу ${message.from}");
+          showToast("Подключились к узлу ${message.from}");
         }
       }
       // Если это поиск файла
       else if (message is FindValueMessage) {
-        _showToast('Получен запрос файла от ${message.from}');
+        showToast('Получен запрос файла от ${message.from}');
 
         updatePeers();
 
@@ -233,7 +233,7 @@ class Peer {
       }
       // Если это запрос на хранение файла
       else if (message is StoreMessage) {
-        _showToast(
+        showToast(
           'Получен запрос на хранение файла ${message.data} от ${message.from}',
         );
 
@@ -252,7 +252,7 @@ class Peer {
     }
   }
 
-  void _showToast(String message) {
+  void showToast(String message) {
     if (!_context.mounted) return;
     try {
       ScaffoldMessenger.of(_context).showSnackBar(

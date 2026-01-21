@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
-import 'package:crypto/crypto.dart';
 
 import 'package:district/message/advertising_message.dart';
 import 'package:district/message/ack_message.dart';
@@ -24,8 +23,6 @@ class UdpTransport {
 
   // Для ожидания ACK (TransferID -> ChunkIndex)
   Completer<void>? _currentAckCompleter;
-  String? _waitingTransferId;
-  int? _waitingChunkIndex;
 
   Future<void> start(Peer peer) async {
     _peer = peer;
@@ -77,128 +74,104 @@ class UdpTransport {
     _fileSocket.close();
   }
 
-  // --- ОТПРАВКА ФАЙЛА (С подтверждением) ---
   Future<void> sendFile(
     String filePath,
     String transferId,
     InternetAddress address,
     int port,
   ) async {
+    final targetAddress = address;
     final file = File(filePath);
-    if (!await file.exists()) return;
+    if (!await file.exists()) {
+      print("Файл не найден");
+      return;
+    }
 
-    print("Начало отправки файла: $filePath");
+    print(">>> ОТПРАВЛЯЮ ФАЙЛ НА ${targetAddress.address} (Порт 9998) >>>");
 
-    // Читаем по кусочкам
     final stream = FileReader.readFileStrictly(filePath, _peer.id, transferId);
 
     await for (final chunk in stream) {
       bool sent = false;
       int attempts = 0;
 
-      // Пытаемся отправить чанк, пока не получим ACK (до 10 попыток)
-      while (!sent && attempts < 10) {
+      while (!sent && attempts < 15) {
         attempts++;
-
-        // 1. Готовим ожидание ACK
         _currentAckCompleter = Completer<void>();
-        _waitingTransferId = transferId;
-        _waitingChunkIndex = chunk.chunkIndex;
 
-        // 2. Отправляем данные (Binary -> Port 9998)
-        _fileSocket.send(chunk.encode(), address, _fileTransferPort);
+        _fileSocket.send(chunk.encode(), targetAddress, _fileTransferPort);
 
-        // 3. Ждем ACK (JSON <- Port 9999) или таймаут
         try {
           await _currentAckCompleter!.future.timeout(
-            Duration(milliseconds: 500),
+            Duration(milliseconds: 800),
           );
-          sent = true; // Успех
+          sent = true;
         } catch (e) {
-          print("Timeout чанк ${chunk.chunkIndex}. Попытка $attempts");
+          // Timeout
         }
       }
 
       if (!sent) {
-        print(
-          "Ошибка: не удалось передать чанк ${chunk.chunkIndex} после $attempts попыток.",
-        );
-        return; // Сдаемся
+        print("!!! ОШИБКА: Не удалось отправить чанк ${chunk.chunkIndex}. !!!");
+        _peer.showToast("Ошибка передачи: сеть заблокирована");
+        return;
       }
     }
-    print("Файл успешно передан.");
-    _resetAckWaiter();
+    print(">>> ФАЙЛ УСПЕШНО ОТПРАВЛЕН <<<");
+    _peer.showToast("Файл успешно отправлен");
   }
 
-  // --- ОБРАБОТКА ВХОДЯЩИХ СИГНАЛОВ (Port 9999) ---
   void _handleMainSocket(RawSocketEvent event) {
     if (event != RawSocketEvent.read) return;
-
-    Datagram? dg = _socket.receive();
+    final dg = _socket.receive();
     if (dg == null) return;
 
     try {
       final message = decodeMessage(dg.data);
 
-      // Если это ACK, проверяем, ждем ли мы его
       if (message is AckMessage) {
-        if (message.to == _peer.id &&
-            message.transferId == _waitingTransferId &&
-            message.chunkIndex == _waitingChunkIndex) {
-          if (_currentAckCompleter != null &&
-              !_currentAckCompleter!.isCompleted) {
-            _currentAckCompleter!.complete();
-          }
+        if (_currentAckCompleter != null &&
+            !_currentAckCompleter!.isCompleted) {
+          _currentAckCompleter!.complete();
         }
         return;
       }
 
-      // Остальные сообщения - в Peer
       if (message.from != _peer.id) {
         _peer.handleMessage(message, dg.address, dg.port);
       }
-    } catch (e) {
-      // Игнорируем битые пакеты
-    }
+    } catch (e) {}
   }
 
-  // --- ОБРАБОТКА ВХОДЯЩИХ ФАЙЛОВ (Port 9998) ---
   void _handleFileSocket(RawSocketEvent event) {
     if (event != RawSocketEvent.read) return;
-
-    Datagram? dg = _fileSocket.receive();
+    final dg = _fileSocket.receive();
     if (dg == null) return;
 
     try {
       final chunk = FileChunk.decode(dg.data);
+      final senderAddress = dg.address;
 
-      // 1. Проверка хеша
-      if (md5.convert(chunk.data).toString() != chunk.chunkHash) {
-        print("Битый чанк ${chunk.chunkIndex}");
-        return;
-      }
-
-      // 2. Сразу отправляем ACK отправителю (на порт 9999)
+      // ACK
       final ack = AckMessage(
         from: _peer.id,
         to: chunk.senderId,
         transferId: chunk.transferId,
         chunkIndex: chunk.chunkIndex,
       );
-      send(ack, address: dg.address, port: _broadcastPort); // Шлем на 9999
+      _socket.send(ack.encode(), senderAddress, _broadcastPort);
 
-      // 3. Сохраняем
+      // Save
       _incomingFiles.putIfAbsent(chunk.transferId, () => {});
-      _incomingFiles[chunk.transferId]![chunk.chunkIndex] = chunk;
+      if (!_incomingFiles[chunk.transferId]!.containsKey(chunk.chunkIndex)) {
+        _incomingFiles[chunk.transferId]![chunk.chunkIndex] = chunk;
+      }
 
-      print("Получен чанк ${chunk.chunkIndex}/${chunk.totalChunks}");
-
-      // 4. Если все собрали - сохраняем файл
       if (_incomingFiles[chunk.transferId]!.length == chunk.totalChunks) {
         _saveFile(chunk.transferId);
       }
     } catch (e) {
-      print("Ошибка приема файла: $e");
+      print("Ошибка обработки пакета файла: $e");
     }
   }
 
@@ -206,25 +179,23 @@ class UdpTransport {
     try {
       final chunks = _incomingFiles[transferId]!;
       final sortedKeys = chunks.keys.toList()..sort();
-
       final buffer = BytesBuilder();
       for (var k in sortedKeys) buffer.add(chunks[k]!.data);
 
-      final path =
-          '${_peer.clientInfo.downloadDirectory}/recv_${DateTime.now().millisecondsSinceEpoch}.bin';
-      await File(path).writeAsBytes(buffer.toBytes());
+      final fileName = 'rec_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final path = '${_peer.clientInfo.downloadDirectory}/$fileName';
 
-      print("Файл сохранен: $path");
+      final file = File(path);
+      await file.create(recursive: true);
+      await file.writeAsBytes(buffer.toBytes());
+
+      print("!!! ФАЙЛ СОХРАНЕН: $path !!!");
+      _peer.showToast("Файл сохранен: $fileName");
+
       _incomingFiles.remove(transferId);
     } catch (e) {
-      print("Ошибка сохранения: $e");
+      print("Ошибка записи файла: $e");
     }
-  }
-
-  void _resetAckWaiter() {
-    _waitingTransferId = null;
-    _waitingChunkIndex = null;
-    _currentAckCompleter = null;
   }
 
   Future<String?> getLocalIpAddress() async {
