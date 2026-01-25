@@ -16,7 +16,7 @@ class UdpTransport {
   final _broadcastPort = 9999;
   final _fileTransferPort = 9998;
 
-  late final RawDatagramSocket _socket; 
+  late final RawDatagramSocket _socket;
   late final RawDatagramSocket _fileSocket;
   late final Peer _peer;
   late final Function(Widget) _updateFloatWidget;
@@ -63,10 +63,12 @@ class UdpTransport {
 
     print("UDP Transport запущен. ID: ${peer.id}");
 
-    _advertTimer = Timer.periodic(Duration(seconds: 5), (t) {
-      //peer.showToast("Отправляю объявление");
-      send(AdvertisingMessage(from: peer.id));
-    });
+    if (Platform.isWindows) {
+      _advertTimer = Timer.periodic(Duration(seconds: 5), (t) {
+        //peer.showToast("Отправляю объявление");
+        send(AdvertisingMessage(from: peer.id));
+      });
+    }
   }
 
   void send(Message message, {InternetAddress? address, int? port}) {
@@ -81,6 +83,8 @@ class UdpTransport {
       );
       if (res == 0) {
         _peer.showToast("Не удалось отправить сообщение");
+      } else {
+        print("Сообщение $message отправлено");
       }
     }
   }
@@ -194,10 +198,10 @@ class UdpTransport {
 
       _cleanupTimers[chunk.transferId]?.cancel();
 
-    _cleanupTimers[chunk.transferId] = Timer(Duration(seconds: 5), () {
-      _cancelDownload(chunk.transferId);
-      _peer.showToast("Операция завершена: таймаут");
-    });
+      _cleanupTimers[chunk.transferId] = Timer(Duration(seconds: 5), () {
+        _cancelDownload(chunk.transferId);
+        _peer.showToast("Операция завершена: таймаут");
+      });
     } catch (e) {
       print("Ошибка обработки пакета файла: $e");
       _updateFloatWidget(new FileButtons(peer: _peer));
@@ -248,9 +252,9 @@ class UdpTransport {
 
   void _cancelDownload(String transferId) {
     _incomingFiles.remove(transferId);
-      _cleanupTimers[transferId]?.cancel();
-      _cleanupTimers.remove(transferId);
-      _updateFloatWidget(new FileButtons(peer: _peer,));
+    _cleanupTimers[transferId]?.cancel();
+    _cleanupTimers.remove(transferId);
+    _updateFloatWidget(new FileButtons(peer: _peer));
   }
 
   Future<String?> getLocalIpAddress() async {

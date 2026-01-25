@@ -60,7 +60,6 @@ class Peer {
       peer._fileMetadata.put(hashedFile.hash, peer.id);
     }
 
-    peer._udpTransport = new UdpTransport(updateFloatWidget);
     peer._updateFloatWidget = updateFloatWidget;
 
     return peer;
@@ -73,7 +72,7 @@ class Peer {
   }
 
   void stopTransport() {
-    _udpTransport!.stop();
+    _udpTransport?.stop();
   }
 
   Future<bool> requestFile(String hashKey) async {
@@ -449,5 +448,9 @@ class Peer {
     final topAlpha = sortedPeers.take(_alpha);
 
     return Map.fromEntries(topAlpha);
+  }
+
+  void advertise() {
+    _udpTransport?.send(AdvertisingMessage(from: id));
   }
 }
