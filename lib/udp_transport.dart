@@ -5,21 +5,18 @@ import 'dart:typed_data';
 import 'package:district/message/advertising_message.dart';
 import 'package:district/message/ack_message.dart';
 import 'package:district/message/message.dart';
-import 'package:district/peer/peer.dart';
 import 'package:district/file/file_transfer.dart';
-import 'package:district/widgets/download_bar.dart';
-import 'package:district/widgets/file_buttons.dart';
-import 'package:flutter/material.dart';
 
 class UdpTransport {
+  final String id;
+  final void Function(Object) sendToPeer;
+  String downloadDirectory;
   String? _broadcastIp;
-  final _broadcastPort = 9999;
-  final _fileTransferPort = 9998;
+  static const int broadcastPort = 9999;
+  static const int fileTransferPort = 9998;
 
   late final RawDatagramSocket _socket;
   late final RawDatagramSocket _fileSocket;
-  late final Peer _peer;
-  late final Function(Widget) _updateFloatWidget;
   Timer? _advertTimer;
 
   // Хранилище входящих кусков
@@ -29,15 +26,15 @@ class UdpTransport {
   // Для ожидания ACK (TransferID -> ChunkIndex)
   Completer<void>? _currentAckCompleter;
 
-  UdpTransport(Function(Widget) updateFloatWidget) {
-    _updateFloatWidget = updateFloatWidget;
-  }
+  UdpTransport({
+    required this.id,
+    required this.sendToPeer,
+    required this.downloadDirectory,
+  });
 
-  Future<void> start(Peer peer) async {
-    _peer = peer;
-
+  Future<void> start() async {
     // Ищем доступный IP-адрес широковещательного канала
-    String? broadcastIp = await getLocalIpAddress();
+    String? broadcastIp = await getBroadcastIp();
     if (broadcastIp == null) {
       print('Не удалось найти IP-адрес широковещательного канала');
       return;
@@ -47,8 +44,7 @@ class UdpTransport {
     // 1. Основной сокет
     _socket = await RawDatagramSocket.bind(
       InternetAddress.anyIPv4,
-      //InternetAddress('192.168.0.144')
-      _broadcastPort,
+      broadcastPort,
     );
     _socket.broadcastEnabled = true;
     _socket.listen(_handleMainSocket);
@@ -56,19 +52,14 @@ class UdpTransport {
     // 2. Файловый сокет
     _fileSocket = await RawDatagramSocket.bind(
       InternetAddress.anyIPv4,
-      _fileTransferPort,
+      fileTransferPort,
     );
     _fileSocket.broadcastEnabled = true;
     _fileSocket.listen(_handleFileSocket);
 
-    print("UDP Transport запущен. ID: ${peer.id}");
-
-    if (Platform.isWindows) {
-      _advertTimer = Timer.periodic(Duration(seconds: 5), (t) {
-        //peer.showToast("Отправляю объявление");
-        send(AdvertisingMessage(from: peer.id));
-      });
-    }
+    _advertTimer = Timer.periodic(Duration(seconds: 5), (t) {
+      send(AdvertisingMessage(from: id));
+    });
   }
 
   void send(Message message, {InternetAddress? address, int? port}) {
@@ -79,10 +70,10 @@ class UdpTransport {
       int res = _socket.send(
         data,
         InternetAddress(_broadcastIp!),
-        _broadcastPort,
+        broadcastPort,
       );
       if (res == 0) {
-        _peer.showToast("Не удалось отправить сообщение");
+        sendToPeer('Не удалось отправить сообщение');
       } else {
         print("Сообщение $message отправлено");
       }
@@ -110,7 +101,7 @@ class UdpTransport {
 
     print(">>> ОТПРАВЛЯЮ ФАЙЛ НА ${targetAddress.address} (Порт 9998) >>>");
 
-    final stream = FileReader.readFileStrictly(filePath, _peer.id, transferId);
+    final stream = FileReader.readFileStrictly(filePath, id, transferId);
 
     await for (final chunk in stream) {
       bool sent = false;
@@ -120,7 +111,7 @@ class UdpTransport {
         attempts++;
         _currentAckCompleter = Completer<void>();
 
-        _fileSocket.send(chunk.encode(), targetAddress, _fileTransferPort);
+        _fileSocket.send(chunk.encode(), targetAddress, fileTransferPort);
 
         try {
           await _currentAckCompleter!.future.timeout(
@@ -134,12 +125,12 @@ class UdpTransport {
 
       if (!sent) {
         print("!!! ОШИБКА: Не удалось отправить чанк ${chunk.chunkIndex}. !!!");
-        _peer.showToast("Ошибка передачи: сеть заблокирована");
+        sendToPeer('Ошибка передачи: сеть заблокирована');
         return;
       }
     }
     print(">>> ФАЙЛ УСПЕШНО ОТПРАВЛЕН <<<");
-    _peer.showToast("Файл успешно отправлен");
+    sendToPeer('Файл успешно отправлен');
   }
 
   void _handleMainSocket(RawSocketEvent event) {
@@ -148,7 +139,7 @@ class UdpTransport {
     if (dg == null) return;
 
     try {
-      final message = decodeMessage(dg.data);
+      final message = Message.decode(dg.data);
 
       if (message is AckMessage) {
         if (_currentAckCompleter != null &&
@@ -158,8 +149,11 @@ class UdpTransport {
         return;
       }
 
-      if (message.from != _peer.id) {
-        _peer.handleMessage(message, dg.address, dg.port);
+      if (message.from != id) {
+        final json = message.toJson();
+        json['address'] = dg.address.address;
+        json['port'] = dg.port;
+        sendToPeer(json);
       }
     } catch (e) {}
   }
@@ -175,12 +169,12 @@ class UdpTransport {
 
       // ACK
       final ack = AckMessage(
-        from: _peer.id,
+        from: id,
         to: chunk.senderId,
         transferId: chunk.transferId,
         chunkIndex: chunk.chunkIndex,
       );
-      _socket.send(ack.encode(), senderAddress, _broadcastPort);
+      _socket.send(ack.encode(), senderAddress, broadcastPort);
 
       // Save
       _incomingFiles.putIfAbsent(chunk.transferId, () => {});
@@ -189,7 +183,7 @@ class UdpTransport {
 
         double progress =
             _incomingFiles[chunk.transferId]!.length / chunk.totalChunks;
-        _updateFloatWidget(new DownloadBar(value: progress));
+        sendToPeer(progress);
       }
 
       if (_incomingFiles[chunk.transferId]!.length == chunk.totalChunks) {
@@ -200,11 +194,11 @@ class UdpTransport {
 
       _cleanupTimers[chunk.transferId] = Timer(Duration(seconds: 5), () {
         _cancelDownload(chunk.transferId);
-        _peer.showToast("Операция завершена: таймаут");
+        sendToPeer('Операция завершена: таймаут');
       });
     } catch (e) {
       print("Ошибка обработки пакета файла: $e");
-      _updateFloatWidget(new FileButtons(peer: _peer));
+      sendToPeer(-1.0);
     }
   }
 
@@ -224,7 +218,7 @@ class UdpTransport {
       final buffer = BytesBuilder();
       for (var k in sortedKeys) buffer.add(chunks[k]!.data);
 
-      final path = '${_peer.clientInfo.downloadDirectory}/$fileName';
+      final path = '${downloadDirectory}/$fileName';
 
       File file = File(path);
       if (await file.exists()) {
@@ -234,19 +228,19 @@ class UdpTransport {
         final ext = fileName.contains('.') ? fileName.split('.').last : 'bin';
         final newName =
             '${nameWithoutExt}_${DateTime.now().millisecondsSinceEpoch}.$ext';
-        file = File('${_peer.clientInfo.downloadDirectory}/$newName');
+        file = File('$downloadDirectory/$newName');
       }
 
       await file.create(recursive: true);
       await file.writeAsBytes(buffer.toBytes());
 
       print("!!! ФАЙЛ СОХРАНЕН: ${file.path} !!!");
-      _peer.showToast("Файл сохранен: ${file.uri.pathSegments.last}");
+      sendToPeer('Файл сохранен: ${file.uri.pathSegments.last}');
 
       _cancelDownload(transferId);
     } catch (e) {
       print("Ошибка записи файла: $e");
-      _updateFloatWidget(new FileButtons(peer: _peer));
+      sendToPeer(-1.0);
     }
   }
 
@@ -254,10 +248,32 @@ class UdpTransport {
     _incomingFiles.remove(transferId);
     _cleanupTimers[transferId]?.cancel();
     _cleanupTimers.remove(transferId);
-    _updateFloatWidget(new FileButtons(peer: _peer));
+    sendToPeer(-1.0);
   }
 
-  Future<String?> getLocalIpAddress() async {
+  void handleJson(Map<String, dynamic> json) {
+    if (json.containsKey('path')) {
+      sendFile(
+        json['path'],
+        json['transferId'],
+        InternetAddress(json['address']),
+        json['port'],
+      );
+    } else {
+      Message message = Message.fromJson(json);
+      if (json.containsKey('address') && json.containsKey('port')) {
+        send(
+          message,
+          address: InternetAddress(json['address']),
+          port: json['port'],
+        );
+      } else {
+        send(message);
+      }
+    }
+  }
+
+  Future<String?> getBroadcastIp() async {
     // 1. Получаем список всех сетевых интерфейсов на устройстве
     List<NetworkInterface> interfaces = await NetworkInterface.list(
       includeLoopback: false, // Исключаем 'localhost' (127.0.0.1)

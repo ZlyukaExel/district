@@ -1,6 +1,3 @@
-import 'dart:io';
-
-import 'package:district/foreground_services/MyTaskHandler.dart';
 import 'package:district/home/home_page.dart';
 import 'package:district/peer/peer.dart';
 import 'package:district/file/hashed_file.dart';
@@ -9,7 +6,6 @@ import 'package:district/widgets/drawer.dart';
 import 'package:district/widgets/files_list.dart';
 import 'package:district/widgets/file_buttons.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
 class HomePageState extends State<HomePage> with WidgetsBindingObserver {
   Peer? peer;
@@ -22,21 +18,11 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     files = NotifierList<HashedFile>();
     _startApp();
-
-    FlutterForegroundTask.addTaskDataCallback(_onReceiveTaskData);
-    if (Platform.isAndroid) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        requestPermissions();
-        initService();
-        startService();
-      });
-    }
   }
 
   Future<void> _startApp() async {
     try {
       peer = await Peer.create(context, files, updateFloatWidget);
-      peer!.startTransport();
       floatWidget = FileButtons(peer: peer!);
       setState(() {});
     } catch (e) {
@@ -48,7 +34,7 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     files.dispose();
-    FlutterForegroundTask.removeTaskDataCallback(_onReceiveTaskData);
+    peer?.onDestroy();
     super.dispose();
   }
 
@@ -93,10 +79,5 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
     setState(() {
       floatWidget = newWidget;
     });
-  }
-
-  void _onReceiveTaskData(Object data) {
-    //print('_onReceiveTaskData: $data');
-    peer?.advertise();
   }
 }

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:district/file/hashed_file.dart';
 import 'package:district/file/xor_distance.dart';
+import 'package:district/foreground_services/MyTaskHandler.dart';
 import 'package:district/message/find_node_message.dart';
 import 'package:district/message/node_answer_message.dart';
 import 'package:district/message/store_message.dart';
@@ -12,31 +13,33 @@ import 'package:district/message/message.dart';
 import 'package:district/message/find_value_message.dart';
 import 'package:district/structures/notifier_list.dart';
 import 'package:district/udp_transport.dart';
+import 'package:district/widgets/download_bar.dart';
+import 'package:district/widgets/file_buttons.dart';
 import 'package:flutter/material.dart';
 import 'package:district/structures/bloom_filter.dart';
 import 'package:district/structures/hash_table.dart';
 import 'package:district/peer/client_info.dart';
+import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
 class Peer {
   late final String id;
-  final int K = 20;
+  static const int K = 20;
+  static const int _alpha = 3;
   late final BuildContext _context;
-  UdpTransport? _udpTransport;
-  final _peers = Map<String, DateTime>();
   final BloomFilter _bloomFilter = BloomFilter(size: 50000, numHashes: 3);
   final HashTable<String, String> _fileMetadata = HashTable<String, String>();
   late final NotifierList<HashedFile> _files;
   late final ClientInfo clientInfo;
   late final Function(Widget) _updateFloatWidget;
+  late final void Function(Map<String, dynamic>) _send;
 
   Function? _findNodeCallback;
   Function? _findValueCallback;
 
-  Peer._() {
-    Timer.periodic(Duration(seconds: 5), (timer) {
-      updatePeers();
-    });
-  }
+  // Storage of peers
+  final Map<String, Timer> peers = {};
+
+  Peer._() {}
 
   static Future<Peer> create(
     BuildContext context,
@@ -62,26 +65,32 @@ class Peer {
 
     peer._updateFloatWidget = updateFloatWidget;
 
+    FlutterForegroundTask.addTaskDataCallback(peer._onReceiveTaskData);
+    if (Platform.isAndroid) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        requestPermissions();
+        initService();
+        startService(peer.id, peer.clientInfo.downloadDirectory);
+      });
+      peer._send = FlutterForegroundTask.sendDataToTask;
+    } else {
+      final transport = UdpTransport(
+        id: peer.id,
+        sendToPeer: peer._onReceiveTaskData,
+        downloadDirectory: peer.clientInfo.downloadDirectory,
+      );
+      transport.start();
+      peer._send = transport.handleJson;
+    }
+
     return peer;
-  }
-
-  void startTransport() {
-    stopTransport();
-    _udpTransport = new UdpTransport(_updateFloatWidget);
-    _udpTransport!.start(this);
-  }
-
-  void stopTransport() {
-    _udpTransport?.stop();
   }
 
   Future<bool> requestFile(String hashKey) async {
     print('Запрашиваем файл $hashKey');
 
-    updatePeers();
-
     // Если нет знакомых узлов, даже не проверяем
-    if (_peers.isEmpty) {
+    if (peers.isEmpty) {
       print("Нет знакомых узлов");
       showToast("Файл не найден: нет знакомых узлов");
       return false;
@@ -127,7 +136,7 @@ class Peer {
         // Отправляем запрос на новый узел
         hasNew = true;
         message.to = peer;
-        _udpTransport!.send(message);
+        _send(message.toJson());
         checkedPeers.add(peer);
       }
 
@@ -154,6 +163,11 @@ class Peer {
     return result != null;
   }
 
+  void handleJson(Map<String, dynamic> json) {
+    Message message = Message.fromJson(json);
+    handleMessage(message, InternetAddress(json['address']), json['port']);
+  }
+
   Future<void> handleMessage(
     Message message,
     InternetAddress address,
@@ -162,24 +176,33 @@ class Peer {
     try {
       // Если это реклама
       if (message is AdvertisingMessage) {
-        // Если уже подключены, обновляем время
-        if (_peers.containsKey(message.from)) {
-          _peers[message.from] = DateTime.now();
-          // print("Обновили время узла ${message.from}");
-          // showToast("Обновили время узла ${message.from}");
-        }
-        // Если нет, подключаемся
-        else if (_peersNeeded()) {
-          _peers[message.from] = DateTime.now();
-          print("Подключились к узлу ${message.from}");
-          showToast("Подключились к узлу ${message.from}");
+        if (peers.containsKey(message.from) || _peersNeeded()) {
+          if (!peers.containsKey(message.from)) {
+            showToast('Connected to ${message.from}');
+            print('Connected to ${message.from}');
+          }
+          peers[message.from]?.cancel();
+          peers[message.from] = Timer(Duration(seconds: 10), () {
+            peers.remove(message.from);
+            if (Platform.isAndroid) {
+              FlutterForegroundTask.sendDataToTask(peers.length);
+            }
+            showToast(
+              "Peer ${message.from} was absen for too long and disconnected",
+            );
+            print(
+              "Peer ${message.from} was absen for too long and disconnected",
+            );
+          });
+          if (Platform.isAndroid) {
+            //showToast('Sending peers.length: ${peers.length}');
+            FlutterForegroundTask.sendDataToTask(peers.length);
+          }
         }
       }
       // Если это поиск файла
       else if (message is FindValueMessage) {
         showToast('Получен запрос файла от ${message.from}');
-
-        updatePeers();
 
         String? fileOwner = getFileOwner(message.data);
 
@@ -194,7 +217,10 @@ class Peer {
             to: message.from,
             data: message.data,
           );
-          _udpTransport!.send(answer, address: address, port: port);
+          Map<String, dynamic> json = answer.toJson();
+          json['address'] = address.address;
+          json['port'] = port;
+          _send(json);
 
           unawaited(sendFileToAddress(message.data, address, 9998));
         }
@@ -214,7 +240,10 @@ class Peer {
             to: message.from,
             data: serialized,
           );
-          _udpTransport!.send(answer, address: address, port: port);
+          Map<String, dynamic> json = answer.toJson();
+          json['address'] = address.address;
+          json['port'] = port;
+          _send(json);
         }
       }
       // Если это поиск ближайшего узла
@@ -229,7 +258,10 @@ class Peer {
           to: message.from,
           data: serializedClosestPeers,
         );
-        _udpTransport!.send(answer, address: address, port: port);
+        Map<String, dynamic> json = answer.toJson();
+        json['address'] = address.address;
+        json['port'] = port;
+        _send(json);
       }
       // Если это ответ по поводу узла
       else if (message is ValueAnswerMessage) {
@@ -322,39 +354,20 @@ class Peer {
 
       print('Начинаем передачу файла: ${targetFile.path}');
 
-      await _udpTransport!.sendFile(targetFile.path, transferId, address, port);
+      final message = {
+        'path': targetFile.path,
+        'transferId': transferId,
+        'address': address.address,
+        'port': port,
+      };
+
+      _send(message);
     } catch (e) {
       print('Ошибка при отправке файла: $e');
     }
   }
 
-  final int _peerLifetime = 7;
-
-  void updatePeers() {
-    //print("Обновляем узлы\nТекущее время: ${DateTime.now()}");
-
-    DateTime now = DateTime.now();
-    List<dynamic> keysToRemove = [];
-
-    for (final peer in _peers.entries) {
-      // print(
-      //   "Последнее время появления узла: ${DateTime.now()}\nРазница: ${now.difference(peer.value).inSeconds}",
-      // );
-      //showToast("Разница: ${now.difference(peer.value).inSeconds}");
-      if (now.difference(peer.value).inSeconds > _peerLifetime) {
-        print("Узел ${peer.key} давно не появлялся, удаляем");
-        showToast("Узел ${peer.key} давно не появлялся, удаляем");
-        keysToRemove.add(peer.key);
-      }
-    }
-
-    // Now remove all collected keys
-    for (var key in keysToRemove) {
-      _peers.remove(key);
-    }
-  }
-
-  bool _peersNeeded() => _peers.length < K;
+  bool _peersNeeded() => peers.length < K;
 
   void _writeFileToPeers(String fileHash) async {
     Message writeMessage = StoreMessage(from: id, data: fileHash);
@@ -365,7 +378,7 @@ class Peer {
         continue;
       }
       writeMessage.to = peer;
-      _udpTransport!.send(writeMessage);
+      _send(writeMessage.toJson());
       print("Записываем файл $fileHash на ближайший узел $peer");
     }
   }
@@ -412,7 +425,7 @@ class Peer {
         hasNew = true;
         askedPeers.add(peer);
         nodeRequest.to = peer;
-        _udpTransport!.send(nodeRequest);
+        _send(nodeRequest.toJson());
       }
 
       // Ожидаем ответ
@@ -431,13 +444,11 @@ class Peer {
     return closestPeers.keys.toList();
   }
 
-  final int _alpha = 3;
-
   Map<String, BigInt> _findClosestLocalPeers(String fileHash) {
     // Вычисляем дистанцию до каждого узла
     final closest = Map<String, BigInt>();
-    for (final peer in _peers.entries) {
-      closest[peer.key] = xorDistance(peer.key, fileHash);
+    for (final peer in peers.keys) {
+      closest[peer] = xorDistance(peer, fileHash);
     }
 
     // Сортируем по расстоянию
@@ -450,7 +461,25 @@ class Peer {
     return Map.fromEntries(topAlpha);
   }
 
-  void advertise() {
-    _udpTransport?.send(AdvertisingMessage(from: id));
+  void _onReceiveTaskData(Object message) {
+    // double: progress
+    // Map<>: message
+    // string: toast
+
+    if (message case double progress) {
+      if (progress < 0) {
+        _updateFloatWidget(new FileButtons(peer: this));
+      } else {
+        _updateFloatWidget(new DownloadBar(value: progress));
+      }
+    } else if (message case Map<String, dynamic> json) {
+      handleJson(json);
+    } else if (message case String toast) {
+      showToast(toast);
+    }
+  }
+
+  void onDestroy() {
+    FlutterForegroundTask.removeTaskDataCallback(_onReceiveTaskData);
   }
 }

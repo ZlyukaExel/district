@@ -1,66 +1,77 @@
 import 'dart:io';
 
+import 'package:district/udp_transport.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
 class MyTaskHandler extends TaskHandler {
-  static const String incrementCountCommand = 'incrementCount';
+  static UdpTransport? _udpTransport;
+  String? _id;
+  String? _downloadDirectory;
 
-  void _incrementCount() {
-    // Update notification content.
-    FlutterForegroundTask.updateService(notificationText: 'district service');
-
-    // Send data to main isolate.
-    FlutterForegroundTask.sendDataToMain("Some message");
-  }
-
-  // Called when the task is started.
   @override
   Future<void> onStart(DateTime timestamp, TaskStarter starter) async {
     print('onStart(starter: ${starter.name})');
-    _incrementCount();
+    _id = await FlutterForegroundTask.getData(key: 'id');
+    _downloadDirectory = await FlutterForegroundTask.getData(
+      key: 'downloadDirectory',
+    );
+
+    _udpTransport = UdpTransport(
+      id: _id!,
+      sendToPeer: sendToPeer,
+      downloadDirectory: _downloadDirectory!,
+    );
+
+    _udpTransport!.start();
+
+    FlutterForegroundTask.updateService(
+      notificationTitle: 'Service running...',
+      notificationText: 'Connected peers: 0',
+    );
   }
 
-  // Called based on the eventAction set in ForegroundTaskOptions.
   @override
-  void onRepeatEvent(DateTime timestamp) {
-    _incrementCount();
-  }
+  void onRepeatEvent(DateTime timestamp) {}
 
-  // Called when the task is destroyed.
   @override
   Future<void> onDestroy(DateTime timestamp, bool isTimeout) async {
     print('onDestroy(isTimeout: $isTimeout)');
   }
 
-  // Called when data is sent using `FlutterForegroundTask.sendDataToTask`.
   @override
   void onReceiveData(Object data) {
-    print('onReceiveData: $data');
-    if (data == incrementCountCommand) {
-      _incrementCount();
+    print('onTaskReceiveData: $data');
+
+    if (data case int intData) {
+      FlutterForegroundTask.updateService(
+        notificationText: 'Connected peers: ${intData}',
+      );
+    } else if (data case Map<String, dynamic> json) {
+      _udpTransport?.handleJson(json);
     }
   }
 
-  // Called when the notification button is pressed.
   @override
   void onNotificationButtonPressed(String id) {
     print('onNotificationButtonPressed: $id');
     if (id == "btn_stop") {
-      print("Process stopped by notification button");
+      print("Service stopped by notification button");
       FlutterForegroundTask.stopService();
     }
   }
 
-  // Called when the notification itself is pressed.
   @override
   void onNotificationPressed() {
     print('onNotificationPressed');
   }
 
-  // Called when the notification itself is dismissed.
   @override
   void onNotificationDismissed() {
     print('onNotificationDismissed');
+  }
+
+  void sendToPeer(Object data) {
+    FlutterForegroundTask.sendDataToMain(data);
   }
 }
 
@@ -119,13 +130,20 @@ void initService() {
   );
 }
 
-Future<ServiceRequestResult> startService() async {
+Future<ServiceRequestResult> startService(
+  String id,
+  String downloadDirectory,
+) async {
+  FlutterForegroundTask.saveData(key: 'id', value: id);
+  FlutterForegroundTask.saveData(
+    key: 'downloadDirectory',
+    value: downloadDirectory,
+  );
+
   if (await FlutterForegroundTask.isRunningService) {
     return FlutterForegroundTask.restartService();
   } else {
     return FlutterForegroundTask.startService(
-      // You can manually specify the foregroundServiceType for the service
-      // to be started, as shown in the comment below.
       serviceTypes: [
         ForegroundServiceTypes.dataSync,
         ForegroundServiceTypes.remoteMessaging,
