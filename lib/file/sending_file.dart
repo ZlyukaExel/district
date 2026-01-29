@@ -1,7 +1,13 @@
 class SendingFile {
   final String fileName;
   final String transferId;
-  double progress = 0;
+  final bool isDownloading;
+  double progress;
 
-  SendingFile(this.fileName, this.transferId);
+  SendingFile(
+    this.fileName,
+    this.transferId,
+    this.isDownloading,
+    this.progress,
+  );
 }

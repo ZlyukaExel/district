@@ -46,8 +46,8 @@ class MyTaskHandler extends TaskHandler {
       FlutterForegroundTask.updateService(
         notificationText: 'Connected peers: ${intData}',
       );
-    } else if (data case Map<String, dynamic> json) {
-      _udpTransport?.handleJson(json);
+    } else {
+      _udpTransport?.onDataRecieved(data);
     }
   }
 
@@ -155,7 +155,6 @@ Future<ServiceRequestResult> startService(
       notificationButtons: [
         const NotificationButton(id: 'btn_stop', text: 'Stop Service'),
       ],
-      //notificationInitialRoute: '/second',
       callback: startCallback,
     );
   }

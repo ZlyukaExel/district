@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:collection/collection.dart';
 import 'package:district/file/hashed_file.dart';
+import 'package:district/file/sending_file.dart';
 import 'package:district/file/xor_distance.dart';
 import 'package:district/foreground_services/MyTaskHandler.dart';
 import 'package:district/message/find_node_message.dart';
@@ -29,9 +31,10 @@ class Peer {
   final BloomFilter _bloomFilter = BloomFilter(size: 50000, numHashes: 3);
   final HashTable<String, String> _fileMetadata = HashTable<String, String>();
   late final NotifierList<HashedFile> _files;
+  late final NotifierList<SendingFile> _sendingFiles;
   late final ClientInfo clientInfo;
   late final Function(Widget) _updateFloatWidget;
-  late final void Function(Map<String, dynamic>) _send;
+  late final void Function(Object) send;
 
   Function? _findNodeCallback;
   Function? _findValueCallback;
@@ -44,6 +47,7 @@ class Peer {
   static Future<Peer> create(
     BuildContext context,
     NotifierList<HashedFile> files,
+    NotifierList<SendingFile> sendingFiles,
     Function(Widget) updateFloatWidget,
   ) async {
     Peer peer = Peer._();
@@ -58,6 +62,7 @@ class Peer {
     print("Узел видим: ${peer.clientInfo.isVisible}");
 
     peer._files = files;
+    peer._sendingFiles = sendingFiles;
     for (final hashedFile in files.value) {
       peer._bloomFilter.addFile(hashedFile.hash);
       peer._fileMetadata.put(hashedFile.hash, peer.id);
@@ -72,7 +77,7 @@ class Peer {
         initService();
         startService(peer.id, peer.clientInfo.downloadDirectory);
       });
-      peer._send = FlutterForegroundTask.sendDataToTask;
+      peer.send = FlutterForegroundTask.sendDataToTask;
     } else {
       final transport = UdpTransport(
         id: peer.id,
@@ -80,7 +85,7 @@ class Peer {
         downloadDirectory: peer.clientInfo.downloadDirectory,
       );
       transport.start();
-      peer._send = transport.handleJson;
+      peer.send = transport.onDataRecieved;
     }
 
     return peer;
@@ -136,7 +141,7 @@ class Peer {
         // Отправляем запрос на новый узел
         hasNew = true;
         message.to = peer;
-        _send(message.toJson());
+        send(message.toJson());
         checkedPeers.add(peer);
       }
 
@@ -180,9 +185,11 @@ class Peer {
           if (!peers.containsKey(message.from)) {
             showToast('Connected to ${message.from}');
             print('Connected to ${message.from}');
+          } else {
+            print('just reset the timer: ${DateTime.now()}');
           }
           peers[message.from]?.cancel();
-          peers[message.from] = Timer(Duration(seconds: 10), () {
+          peers[message.from] = Timer(Duration(seconds: 12), () {
             peers.remove(message.from);
             if (Platform.isAndroid) {
               FlutterForegroundTask.sendDataToTask(peers.length);
@@ -191,11 +198,10 @@ class Peer {
               "Peer ${message.from} was absen for too long and disconnected",
             );
             print(
-              "Peer ${message.from} was absen for too long and disconnected",
+              "Peer ${message.from} was absen for too long and disconnected: ${DateTime.now()}",
             );
           });
           if (Platform.isAndroid) {
-            //showToast('Sending peers.length: ${peers.length}');
             FlutterForegroundTask.sendDataToTask(peers.length);
           }
         }
@@ -220,7 +226,7 @@ class Peer {
           Map<String, dynamic> json = answer.toJson();
           json['address'] = address.address;
           json['port'] = port;
-          _send(json);
+          send(json);
 
           unawaited(sendFileToAddress(message.data, address, 9998));
         }
@@ -243,7 +249,7 @@ class Peer {
           Map<String, dynamic> json = answer.toJson();
           json['address'] = address.address;
           json['port'] = port;
-          _send(json);
+          send(json);
         }
       }
       // Если это поиск ближайшего узла
@@ -261,7 +267,7 @@ class Peer {
         Map<String, dynamic> json = answer.toJson();
         json['address'] = address.address;
         json['port'] = port;
-        _send(json);
+        send(json);
       }
       // Если это ответ по поводу узла
       else if (message is ValueAnswerMessage) {
@@ -361,7 +367,7 @@ class Peer {
         'port': port,
       };
 
-      _send(message);
+      send(message);
     } catch (e) {
       print('Ошибка при отправке файла: $e');
     }
@@ -378,7 +384,7 @@ class Peer {
         continue;
       }
       writeMessage.to = peer;
-      _send(writeMessage.toJson());
+      send(writeMessage.toJson());
       print("Записываем файл $fileHash на ближайший узел $peer");
     }
   }
@@ -425,7 +431,7 @@ class Peer {
         hasNew = true;
         askedPeers.add(peer);
         nodeRequest.to = peer;
-        _send(nodeRequest.toJson());
+        send(nodeRequest.toJson());
       }
 
       // Ожидаем ответ
@@ -473,9 +479,52 @@ class Peer {
         _updateFloatWidget(new DownloadBar(value: progress));
       }
     } else if (message case Map<String, dynamic> json) {
-      handleJson(json);
+      if (json.containsKey('progress')) {
+        handleProgress(json);
+      } else {
+        handleJson(json);
+      }
     } else if (message case String toast) {
       showToast(toast);
+    }
+  }
+
+  void handleProgress(Map<String, dynamic> json) {
+    // -1: Cancel
+    // -2: Error TODO
+    // 1: Success
+
+    // Add or update file
+    if (json.containsKey('name') && json.containsKey('isDownloading')) {
+      SendingFile? currentFile = _sendingFiles.value.firstWhereOrNull(
+        (file) => file.transferId == json['transferId'],
+      );
+      // Если файла с таким transferId нет, создаем новый
+      if (currentFile == null) {
+        currentFile = SendingFile(
+          json['name'],
+          json['transferId'],
+          json['isDownloading'],
+          json['progress'],
+        );
+      }
+      // Если есть файл с таким transferId, обновляем его
+      else {
+        currentFile.progress = json['progress'];
+      }
+
+      _sendingFiles.remove(currentFile);
+      _sendingFiles.add(currentFile);
+    }
+    // Remove file
+    else {
+      SendingFile? currentFile = _sendingFiles.value.firstWhereOrNull(
+        (file) => file.transferId == json['transferId'],
+      );
+
+      if (currentFile != null) {
+        _sendingFiles.remove(currentFile);
+      }
     }
   }
 

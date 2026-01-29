@@ -19,11 +19,9 @@ class UdpTransport {
   late final RawDatagramSocket _fileSocket;
   Timer? _advertTimer;
 
-  // Хранилище входящих кусков
   final Map<String, Map<int, FileChunk>> _incomingFiles = {};
+  final Set<String> _sendingFiles = {};
   final Map<String, Timer> _cleanupTimers = {};
-
-  // Для ожидания ACK (TransferID -> ChunkIndex)
   Completer<void>? _currentAckCompleter;
 
   UdpTransport({
@@ -75,7 +73,7 @@ class UdpTransport {
       if (res == 0) {
         sendToPeer('Не удалось отправить сообщение');
       } else {
-        print("Сообщение $message отправлено");
+        //sendToPeer("Сообщение $message отправлено");
       }
     }
   }
@@ -95,19 +93,22 @@ class UdpTransport {
     final targetAddress = address;
     final file = File(filePath);
     if (!await file.exists()) {
-      print("Файл не найден");
+      print("File not found");
+      sendToPeer('File not found');
       return;
     }
 
-    print(">>> ОТПРАВЛЯЮ ФАЙЛ НА ${targetAddress.address} (Порт 9998) >>>");
+    print("Sending file on ${targetAddress.address}/$port");
 
+    _sendingFiles.add(transferId);
     final stream = FileReader.readFileStrictly(filePath, id, transferId);
 
+    int i = 0;
     await for (final chunk in stream) {
       bool sent = false;
       int attempts = 0;
 
-      while (!sent && attempts < 15) {
+      while (!sent && attempts < 15 && _sendingFiles.contains(transferId)) {
         attempts++;
         _currentAckCompleter = Completer<void>();
 
@@ -123,14 +124,26 @@ class UdpTransport {
         }
       }
 
-      if (!sent) {
-        print("!!! ОШИБКА: Не удалось отправить чанк ${chunk.chunkIndex}. !!!");
-        sendToPeer('Ошибка передачи: сеть заблокирована');
+      if (sent) {
+        i++;
+        final json = {
+          'transferId': transferId,
+          'name': chunk.fileName,
+          'isDownloading': false,
+          'progress': i / chunk.totalChunks,
+        };
+        sendToPeer(json);
+      } else {
+        print("Couldn't send file chunk ${chunk.chunkIndex}");
+        sendToPeer('Файл не передан');
+        cancelOperation(transferId);
         return;
       }
     }
-    print(">>> ФАЙЛ УСПЕШНО ОТПРАВЛЕН <<<");
+    print("File send successfully");
     sendToPeer('Файл успешно отправлен');
+    cancelOperation(transferId);
+    _sendingFiles.remove(transferId);
   }
 
   void _handleMainSocket(RawSocketEvent event) {
@@ -183,7 +196,13 @@ class UdpTransport {
 
         double progress =
             _incomingFiles[chunk.transferId]!.length / chunk.totalChunks;
-        sendToPeer(progress);
+        final json = {
+          'transferId': chunk.transferId,
+          'name': chunk.fileName,
+          'isDownloading': true,
+          'progress': progress,
+        };
+        sendToPeer(json);
       }
 
       if (_incomingFiles[chunk.transferId]!.length == chunk.totalChunks) {
@@ -193,12 +212,11 @@ class UdpTransport {
       _cleanupTimers[chunk.transferId]?.cancel();
 
       _cleanupTimers[chunk.transferId] = Timer(Duration(seconds: 5), () {
-        _cancelDownload(chunk.transferId);
+        cancelOperation(chunk.transferId);
         sendToPeer('Операция завершена: таймаут');
       });
     } catch (e) {
       print("Ошибка обработки пакета файла: $e");
-      sendToPeer(-1.0);
     }
   }
 
@@ -237,39 +255,45 @@ class UdpTransport {
       print("!!! ФАЙЛ СОХРАНЕН: ${file.path} !!!");
       sendToPeer('Файл сохранен: ${file.uri.pathSegments.last}');
 
-      _cancelDownload(transferId);
+      cancelOperation(transferId);
     } catch (e) {
       print("Ошибка записи файла: $e");
-      sendToPeer(-1.0);
+      cancelOperation(transferId);
     }
   }
 
-  void _cancelDownload(String transferId) {
+  void cancelOperation(String transferId) {
+    print("Завершаем операцию: $transferId");
     _incomingFiles.remove(transferId);
+    _sendingFiles.remove(transferId);
     _cleanupTimers[transferId]?.cancel();
     _cleanupTimers.remove(transferId);
-    sendToPeer(-1.0);
+    sendToPeer({'transferId': transferId, 'progress': -1});
   }
 
-  void handleJson(Map<String, dynamic> json) {
-    if (json.containsKey('path')) {
-      sendFile(
-        json['path'],
-        json['transferId'],
-        InternetAddress(json['address']),
-        json['port'],
-      );
-    } else {
-      Message message = Message.fromJson(json);
-      if (json.containsKey('address') && json.containsKey('port')) {
-        send(
-          message,
-          address: InternetAddress(json['address']),
-          port: json['port'],
+  void onDataRecieved(Object data) {
+    if (data case Map<String, dynamic> json) {
+      if (json.containsKey('path')) {
+        sendFile(
+          json['path'],
+          json['transferId'],
+          InternetAddress(json['address']),
+          json['port'],
         );
       } else {
-        send(message);
+        Message message = Message.fromJson(json);
+        if (json.containsKey('address') && json.containsKey('port')) {
+          send(
+            message,
+            address: InternetAddress(json['address']),
+            port: json['port'],
+          );
+        } else {
+          send(message);
+        }
       }
+    } else if (data case String transferId) {
+      cancelOperation(transferId);
     }
   }
 
