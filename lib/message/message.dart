@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:district/message/advertising_message.dart';
+import 'package:district/message/cancel_operation_message.dart';
 import 'package:district/message/find_value_message.dart';
 import 'package:district/message/node_answer_message.dart';
 import 'package:district/message/store_message.dart';
@@ -16,6 +17,7 @@ enum MessageType {
   nodeAnswer,
   valueAnswer,
   ack,
+  cancelOperation,
 }
 
 abstract class Message {
@@ -56,6 +58,8 @@ abstract class Message {
         return ValueAnswerMessage.fromJson(json);
       case MessageType.ack:
         return AckMessage.fromJson(json);
+      case MessageType.cancelOperation:
+        return CancelOperationMessage.fromJson(json);
     }
   }
 }

@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 
 class HistoryList extends StatelessWidget {
   final NotifierList<SendingFile> filesList;
-  final void Function(Object) onCancel;
+  final void Function(String) onCancel;
 
   const HistoryList({
     required this.filesList,

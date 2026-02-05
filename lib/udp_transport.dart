@@ -5,7 +5,7 @@ import 'dart:typed_data';
 import 'package:district/message/advertising_message.dart';
 import 'package:district/message/ack_message.dart';
 import 'package:district/message/message.dart';
-import 'package:district/file/file_transfer.dart';
+import 'package:district/file/file_chunk.dart';
 
 class UdpTransport {
   final String id;
@@ -15,10 +15,11 @@ class UdpTransport {
   static const int broadcastPort = 9999;
   static const int fileTransferPort = 9998;
 
-  late final RawDatagramSocket _socket;
-  late final RawDatagramSocket _fileSocket;
+  late final RawDatagramSocket? _socket;
+  late final RawDatagramSocket? _fileSocket;
   Timer? _advertTimer;
 
+  final Set<String> _awaitingFilesHashes = {};
   final Map<String, Map<int, FileChunk>> _incomingFiles = {};
   final Set<String> _sendingFiles = {};
   final Map<String, Timer> _cleanupTimers = {};
@@ -40,20 +41,41 @@ class UdpTransport {
     _broadcastIp = broadcastIp;
 
     // 1. Основной сокет
-    _socket = await RawDatagramSocket.bind(
-      InternetAddress.anyIPv4,
-      broadcastPort,
-    );
+    for (int port = broadcastPort; port <= broadcastPort + 1000; port++) {
+      try {
+        _socket = await RawDatagramSocket.bind(InternetAddress.anyIPv4, port);
+      } catch (e) {
+        // Порт закрыт или недоступен
+      }
+    }
+    if (_socket == null) {
+      sendToPeer('Avaliable port not found!');
+      return;
+    }
     _socket.broadcastEnabled = true;
     _socket.listen(_handleMainSocket);
 
     // 2. Файловый сокет
-    _fileSocket = await RawDatagramSocket.bind(
-      InternetAddress.anyIPv4,
-      fileTransferPort,
-    );
+    for (int port = fileTransferPort; port <= fileTransferPort + 1000; port++) {
+      try {
+        _fileSocket = await RawDatagramSocket.bind(
+          InternetAddress.anyIPv4,
+          port,
+        );
+      } catch (e) {
+        // Порт закрыт или недоступен
+      }
+    }
+    if (_fileSocket == null) {
+      sendToPeer('Avaliable file port not found!');
+      return;
+    }
     _fileSocket.broadcastEnabled = true;
     _fileSocket.listen(_handleFileSocket);
+
+    sendToPeer(
+      'Transport started at ports: ${_socket.port}, ${_fileSocket.port}',
+    );
 
     _advertTimer = Timer.periodic(Duration(seconds: 5), (t) {
       send(AdvertisingMessage(from: id));
@@ -63,15 +85,15 @@ class UdpTransport {
   void send(Message message, {InternetAddress? address, int? port}) {
     final data = message.encode();
     if (address != null && port != null) {
-      _socket.send(data, address, port);
+      _socket!.send(data, address, port);
     } else {
-      int res = _socket.send(
+      int res = _socket!.send(
         data,
         InternetAddress(_broadcastIp!),
         broadcastPort,
       );
       if (res == 0) {
-        sendToPeer('Не удалось отправить сообщение');
+        sendToPeer('Error sending message');
       } else {
         //sendToPeer("Сообщение $message отправлено");
       }
@@ -80,8 +102,8 @@ class UdpTransport {
 
   void stop() {
     _advertTimer?.cancel();
-    _socket.close();
-    _fileSocket.close();
+    _socket?.close();
+    _fileSocket?.close();
   }
 
   Future<void> sendFile(
@@ -112,7 +134,7 @@ class UdpTransport {
         attempts++;
         _currentAckCompleter = Completer<void>();
 
-        _fileSocket.send(chunk.encode(), targetAddress, fileTransferPort);
+        _fileSocket!.send(chunk.encode(), targetAddress, fileTransferPort);
 
         try {
           await _currentAckCompleter!.future.timeout(
@@ -134,21 +156,21 @@ class UdpTransport {
         };
         sendToPeer(json);
       } else {
-        print("Couldn't send file chunk ${chunk.chunkIndex}");
-        sendToPeer('Файл не передан');
-        cancelOperation(transferId);
+        print("An error occured while sending file chunk ${chunk.chunkIndex}");
+        sendToPeer('An error occured while sending file chunk');
+        endOperation(transferId, -1);
         return;
       }
     }
     print("File send successfully");
-    sendToPeer('Файл успешно отправлен');
-    cancelOperation(transferId);
+    sendToPeer('File was succesfully sent');
+    endOperation(transferId, 1);
     _sendingFiles.remove(transferId);
   }
 
   void _handleMainSocket(RawSocketEvent event) {
     if (event != RawSocketEvent.read) return;
-    final dg = _socket.receive();
+    final dg = _socket!.receive();
     if (dg == null) return;
 
     try {
@@ -173,11 +195,16 @@ class UdpTransport {
 
   void _handleFileSocket(RawSocketEvent event) {
     if (event != RawSocketEvent.read) return;
-    final dg = _fileSocket.receive();
+    final dg = _fileSocket!.receive();
     if (dg == null) return;
 
     try {
       final chunk = FileChunk.decode(dg.data);
+
+      if (!_awaitingFilesHashes.contains(chunk.fileHash)) {
+        return;
+      }
+
       final senderAddress = dg.address;
 
       // ACK
@@ -187,7 +214,7 @@ class UdpTransport {
         transferId: chunk.transferId,
         chunkIndex: chunk.chunkIndex,
       );
-      _socket.send(ack.encode(), senderAddress, broadcastPort);
+      _socket!.send(ack.encode(), senderAddress, broadcastPort);
 
       // Save
       _incomingFiles.putIfAbsent(chunk.transferId, () => {});
@@ -212,8 +239,8 @@ class UdpTransport {
       _cleanupTimers[chunk.transferId]?.cancel();
 
       _cleanupTimers[chunk.transferId] = Timer(Duration(seconds: 5), () {
-        cancelOperation(chunk.transferId);
-        sendToPeer('Операция завершена: таймаут');
+        endOperation(chunk.transferId, -1);
+        sendToPeer('Operation ended: timeout');
       });
     } catch (e) {
       print("Ошибка обработки пакета файла: $e");
@@ -253,26 +280,40 @@ class UdpTransport {
       await file.writeAsBytes(buffer.toBytes());
 
       print("!!! ФАЙЛ СОХРАНЕН: ${file.path} !!!");
-      sendToPeer('Файл сохранен: ${file.uri.pathSegments.last}');
+      sendToPeer('File ${file.uri.pathSegments.last} saved');
 
-      cancelOperation(transferId);
+      endOperation(transferId, 1);
     } catch (e) {
       print("Ошибка записи файла: $e");
-      cancelOperation(transferId);
+      endOperation(transferId, -1);
     }
   }
 
-  void cancelOperation(String transferId) {
+  void endOperation(String transferId, double progress) {
     print("Завершаем операцию: $transferId");
+    final fileHash = _getHashByTransferId(transferId);
+    if (fileHash != null) {
+      _awaitingFilesHashes.remove(fileHash);
+    }
     _incomingFiles.remove(transferId);
     _sendingFiles.remove(transferId);
     _cleanupTimers[transferId]?.cancel();
     _cleanupTimers.remove(transferId);
-    sendToPeer({'transferId': transferId, 'progress': -1});
+    sendToPeer({'transferId': transferId, 'progress': progress});
   }
 
-  void onDataRecieved(Object data) {
+  String? _getHashByTransferId(String transferId) {
+    for (final operation in _incomingFiles.entries) {
+      if (operation.key == transferId) {
+        return operation.value.entries.first.value.fileHash;
+      }
+    }
+    return null;
+  }
+
+  void onDataFromPeerRecieved(Object data) {
     if (data case Map<String, dynamic> json) {
+      // Send file
       if (json.containsKey('path')) {
         sendFile(
           json['path'],
@@ -280,7 +321,28 @@ class UdpTransport {
           InternetAddress(json['address']),
           json['port'],
         );
-      } else {
+      }
+      // Start/end download
+      else if (json.containsKey('download')) {
+        // if fileHash provided
+        if (json.containsKey('fileHash')) {
+          if (json['download']) {
+            _awaitingFilesHashes.add(json['fileHash']);
+          } else {
+            _awaitingFilesHashes.remove(json['fileHash']);
+          }
+        }
+        // Cancel operation if transferId provided
+        else if (json.containsKey('transferId')) {
+          endOperation(json['transferId'], -2);
+        }
+        // Unknown command
+        else {
+          print('Unknown message $json');
+        }
+      }
+      // Send message
+      else {
         Message message = Message.fromJson(json);
         if (json.containsKey('address') && json.containsKey('port')) {
           send(
@@ -293,7 +355,7 @@ class UdpTransport {
         }
       }
     } else if (data case String transferId) {
-      cancelOperation(transferId);
+      endOperation(transferId, -2);
     }
   }
 

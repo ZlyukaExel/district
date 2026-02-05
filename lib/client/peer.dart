@@ -4,23 +4,23 @@ import 'package:collection/collection.dart';
 import 'package:district/file/hashed_file.dart';
 import 'package:district/file/sending_file.dart';
 import 'package:district/file/xor_distance.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import 'package:district/foreground_services/MyTaskHandler.dart';
+import 'package:district/message/cancel_operation_message.dart';
 import 'package:district/message/find_node_message.dart';
 import 'package:district/message/node_answer_message.dart';
 import 'package:district/message/store_message.dart';
 import 'package:district/message/value_answer_message.dart';
-import 'package:district/peer/id_generator.dart';
+import 'package:district/client/id_generator.dart';
 import 'package:district/message/advertising_message.dart';
 import 'package:district/message/message.dart';
 import 'package:district/message/find_value_message.dart';
 import 'package:district/structures/notifier_list.dart';
 import 'package:district/udp_transport.dart';
-import 'package:district/widgets/download_bar.dart';
-import 'package:district/widgets/file_buttons.dart';
 import 'package:flutter/material.dart';
 import 'package:district/structures/bloom_filter.dart';
 import 'package:district/structures/hash_table.dart';
-import 'package:district/peer/client_info.dart';
+import 'package:district/client/client_info.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
 class Peer {
@@ -28,13 +28,12 @@ class Peer {
   static const int K = 20;
   static const int _alpha = 3;
   late final BuildContext _context;
-  final BloomFilter _bloomFilter = BloomFilter(size: 50000, numHashes: 3);
+  late BloomFilter _bloomFilter;
   final HashTable<String, String> _fileMetadata = HashTable<String, String>();
   late final NotifierList<HashedFile> _files;
   late final NotifierList<SendingFile> _sendingFiles;
   late final ClientInfo clientInfo;
-  late final Function(Widget) _updateFloatWidget;
-  late final void Function(Object) send;
+  late final void Function(Object) sendToTransport;
 
   Function? _findNodeCallback;
   Function? _findValueCallback;
@@ -48,7 +47,6 @@ class Peer {
     BuildContext context,
     NotifierList<HashedFile> files,
     NotifierList<SendingFile> sendingFiles,
-    Function(Widget) updateFloatWidget,
   ) async {
     Peer peer = Peer._();
     peer._context = context;
@@ -68,8 +66,6 @@ class Peer {
       peer._fileMetadata.put(hashedFile.hash, peer.id);
     }
 
-    peer._updateFloatWidget = updateFloatWidget;
-
     FlutterForegroundTask.addTaskDataCallback(peer._onReceiveTaskData);
     if (Platform.isAndroid) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -77,7 +73,7 @@ class Peer {
         initService();
         startService(peer.id, peer.clientInfo.downloadDirectory);
       });
-      peer.send = FlutterForegroundTask.sendDataToTask;
+      peer.sendToTransport = FlutterForegroundTask.sendDataToTask;
     } else {
       final transport = UdpTransport(
         id: peer.id,
@@ -85,7 +81,7 @@ class Peer {
         downloadDirectory: peer.clientInfo.downloadDirectory,
       );
       transport.start();
-      peer.send = transport.onDataRecieved;
+      peer.sendToTransport = transport.onDataFromPeerRecieved;
     }
 
     return peer;
@@ -97,11 +93,12 @@ class Peer {
     // Если нет знакомых узлов, даже не проверяем
     if (peers.isEmpty) {
       print("Нет знакомых узлов");
-      showToast("Файл не найден: нет знакомых узлов");
+      showToast("File not found: no peers added");
       return false;
     }
 
     final message = FindValueMessage(from: id, data: hashKey);
+    sendToTransport({'fileHash': hashKey, 'download': true});
     Map<String, BigInt> closestPeers = _findClosestLocalPeers(hashKey);
     final checkedPeers = <String>{id};
 
@@ -141,7 +138,7 @@ class Peer {
         // Отправляем запрос на новый узел
         hasNew = true;
         message.to = peer;
-        send(message.toJson());
+        sendToTransport(message.toJson());
         checkedPeers.add(peer);
       }
 
@@ -159,11 +156,14 @@ class Peer {
     print(
       "Файл $hashKey ${result != null ? 'найден' : 'не найден на известных узлах'}",
     );
-    showToast(
-      result != null ? 'Файл найден' : 'Файл не найден на известных узлах',
-    );
+    showToast(result != null ? 'File found' : 'File not found on peers');
 
     _findValueCallback = null;
+
+    // Stop waiting if not found
+    if (result == null) {
+      sendToTransport({'fileHash': hashKey, 'download': false});
+    }
 
     return result != null;
   }
@@ -208,7 +208,7 @@ class Peer {
       }
       // Если это поиск файла
       else if (message is FindValueMessage) {
-        showToast('Получен запрос файла от ${message.from}');
+        //showToast('Получен запрос файла от ${message.from}');
 
         String? fileOwner = getFileOwner(message.data);
 
@@ -226,7 +226,7 @@ class Peer {
           Map<String, dynamic> json = answer.toJson();
           json['address'] = address.address;
           json['port'] = port;
-          send(json);
+          sendToTransport(json);
 
           unawaited(sendFileToAddress(message.data, address, 9998));
         }
@@ -249,7 +249,7 @@ class Peer {
           Map<String, dynamic> json = answer.toJson();
           json['address'] = address.address;
           json['port'] = port;
-          send(json);
+          sendToTransport(json);
         }
       }
       // Если это поиск ближайшего узла
@@ -267,7 +267,7 @@ class Peer {
         Map<String, dynamic> json = answer.toJson();
         json['address'] = address.address;
         json['port'] = port;
-        send(json);
+        sendToTransport(json);
       }
       // Если это ответ по поводу узла
       else if (message is ValueAnswerMessage) {
@@ -283,15 +283,19 @@ class Peer {
       }
       // Если это запрос на хранение файла
       else if (message is StoreMessage) {
-        showToast(
-          'Получен запрос на хранение файла ${message.data} от ${message.from}',
-        );
+        // showToast(
+        //   'Получен запрос на хранение файла ${message.data} от ${message.from}',
+        // );
 
         // Записываем файл себе
         _fileMetadata.put(message.data, message.from);
         _bloomFilter.addFile(message.data);
 
         print("Файл ${message.data} записан по запросу ${message.from}");
+      }
+      // Если это отмена операции
+      else if (message is CancelOperationMessage) {
+        sendToTransport({'transferId': message.data, 'download': false});
       }
       // Неизвестный тип сообщения
       else {
@@ -305,9 +309,13 @@ class Peer {
   void showToast(String message) {
     if (!_context.mounted) return;
     try {
-      ScaffoldMessenger.of(_context).showSnackBar(
-        SnackBar(content: Text(message), duration: Duration(seconds: 1)),
-      );
+      if (Platform.isAndroid) {
+        Fluttertoast.showToast(msg: message);
+      } else {
+        ScaffoldMessenger.of(_context).showSnackBar(
+          SnackBar(content: Text(message), duration: Duration(seconds: 1)),
+        );
+      }
     } catch (e) {
       print("Toast error: $e");
     }
@@ -320,7 +328,7 @@ class Peer {
     }
 
     // Список для отображения
-    _files.value = [..._files.value, hashedFile];
+    _files.add(hashedFile);
 
     // Сохраняем информацию о файле у себя
     _fileMetadata.put(hashedFile.hash, id);
@@ -331,6 +339,11 @@ class Peer {
 
     print('Файл успешно добавлен: ${hashedFile.path}');
     return;
+  }
+
+  void deleteFile(HashedFile hashedFile) {
+    _files.remove(hashedFile);
+    _recreateBloomFilter();
   }
 
   String? getFileOwner(String hashKey) => _fileMetadata.get(hashKey);
@@ -367,7 +380,7 @@ class Peer {
         'port': port,
       };
 
-      send(message);
+      sendToTransport(message);
     } catch (e) {
       print('Ошибка при отправке файла: $e');
     }
@@ -384,7 +397,7 @@ class Peer {
         continue;
       }
       writeMessage.to = peer;
-      send(writeMessage.toJson());
+      sendToTransport(writeMessage.toJson());
       print("Записываем файл $fileHash на ближайший узел $peer");
     }
   }
@@ -431,7 +444,7 @@ class Peer {
         hasNew = true;
         askedPeers.add(peer);
         nodeRequest.to = peer;
-        send(nodeRequest.toJson());
+        sendToTransport(nodeRequest.toJson());
       }
 
       // Ожидаем ответ
@@ -451,34 +464,27 @@ class Peer {
   }
 
   Map<String, BigInt> _findClosestLocalPeers(String fileHash) {
-    // Вычисляем дистанцию до каждого узла
+    // Calculate distance for every peer
     final closest = Map<String, BigInt>();
     for (final peer in peers.keys) {
       closest[peer] = xorDistance(peer, fileHash);
     }
 
-    // Сортируем по расстоянию
+    // Sort by distance
     final sortedPeers = closest.entries.toList()
       ..sort((a, b) => a.value.compareTo(b.value));
 
-    // Берем только alpha ближайших узлов
+    // Take alpha closest
     final topAlpha = sortedPeers.take(_alpha);
 
     return Map.fromEntries(topAlpha);
   }
 
   void _onReceiveTaskData(Object message) {
-    // double: progress
-    // Map<>: message
+    // Map<>: message or progress
     // string: toast
 
-    if (message case double progress) {
-      if (progress < 0) {
-        _updateFloatWidget(new FileButtons(peer: this));
-      } else {
-        _updateFloatWidget(new DownloadBar(value: progress));
-      }
-    } else if (message case Map<String, dynamic> json) {
+    if (message case Map<String, dynamic> json) {
       if (json.containsKey('progress')) {
         handleProgress(json);
       } else {
@@ -490,42 +496,40 @@ class Peer {
   }
 
   void handleProgress(Map<String, dynamic> json) {
-    // -1: Cancel
-    // -2: Error TODO
-    // 1: Success
-
     // Add or update file
-    if (json.containsKey('name') && json.containsKey('isDownloading')) {
-      SendingFile? currentFile = _sendingFiles.value.firstWhereOrNull(
-        (file) => file.transferId == json['transferId'],
+    SendingFile? currentFile = _sendingFiles.value.firstWhereOrNull(
+      (file) => file.transferId == json['transferId'],
+    );
+    // If no file with this transferId, create new
+    if (currentFile == null) {
+      if (!json.containsKey('name') && !json.containsKey('isDownloading')) {
+        return;
+      }
+      currentFile = SendingFile(
+        json['name'],
+        json['transferId'],
+        json['isDownloading'],
+        json['progress'],
       );
-      // Если файла с таким transferId нет, создаем новый
-      if (currentFile == null) {
-        currentFile = SendingFile(
-          json['name'],
-          json['transferId'],
-          json['isDownloading'],
-          json['progress'],
-        );
-      }
-      // Если есть файл с таким transferId, обновляем его
-      else {
-        currentFile.progress = json['progress'];
-      }
 
-      _sendingFiles.remove(currentFile);
       _sendingFiles.add(currentFile);
     }
-    // Remove file
+    // If have file with this transferId, just update it
     else {
-      SendingFile? currentFile = _sendingFiles.value.firstWhereOrNull(
-        (file) => file.transferId == json['transferId'],
-      );
-
-      if (currentFile != null) {
-        _sendingFiles.remove(currentFile);
-      }
+      currentFile.progress = json['progress'];
+      _sendingFiles.notify();
     }
+  }
+
+  void cancelOperation(String transferId) {
+    sendToTransport({'transferId': transferId, 'download': false});
+    final message = CancelOperationMessage(from: id, data: transferId);
+    sendToTransport(message.toJson());
+  }
+
+  void _recreateBloomFilter() {
+    _bloomFilter = BloomFilter(size: 50000, numHashes: 3);
+    _bloomFilter.addFiles(_files.value.map((file) => file.hash).toList());
   }
 
   void onDestroy() {

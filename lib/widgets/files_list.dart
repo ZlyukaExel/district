@@ -5,8 +5,13 @@ import 'package:flutter/material.dart';
 
 class FilesList extends StatelessWidget {
   final NotifierList<HashedFile> filesList;
+  final Function(HashedFile) onDismissed;
 
-  const FilesList({required this.filesList, super.key});
+  const FilesList({
+    required this.filesList,
+    required this.onDismissed,
+    super.key,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -20,7 +25,7 @@ class FilesList extends StatelessWidget {
             return FileListItem(
               file: file,
               onDismissed: () {
-                filesList.remove(file);
+                onDismissed(file);
               },
             );
           },

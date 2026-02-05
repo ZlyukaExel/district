@@ -1,5 +1,5 @@
-import 'package:district/peer/client_info.dart';
-import 'package:district/peer/peer.dart';
+import 'package:district/client/client_info.dart';
+import 'package:district/client/peer.dart';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 

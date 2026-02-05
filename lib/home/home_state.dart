@@ -1,6 +1,6 @@
 import 'package:district/file/sending_file.dart';
 import 'package:district/home/home_page.dart';
-import 'package:district/peer/peer.dart';
+import 'package:district/client/peer.dart';
 import 'package:district/file/hashed_file.dart';
 import 'package:district/structures/notifier_list.dart';
 import 'package:district/widgets/drawer.dart';
@@ -29,7 +29,7 @@ class HomePageState extends State<HomePage>
 
   Future<void> _startApp() async {
     try {
-      peer = await Peer.create(context, files, sendingFiles, updateFloatWidget);
+      peer = await Peer.create(context, files, sendingFiles);
       floatWidget = FileButtons(peer: peer!);
       setState(() {});
     } catch (e) {
@@ -66,8 +66,8 @@ class HomePageState extends State<HomePage>
         bottom: TabBar(
           controller: _tabController,
           tabs: [
-            Tab(text: 'Файлы'),
-            Tab(text: 'Текущие операции'),
+            Tab(text: 'Files'),
+            Tab(text: 'History'),
           ],
           labelColor: Colors.black,
           unselectedLabelColor: Colors.black54,
@@ -77,8 +77,8 @@ class HomePageState extends State<HomePage>
       body: TabBarView(
         controller: _tabController,
         children: [
-          FilesList(filesList: files),
-          HistoryList(filesList: sendingFiles, onCancel: peer!.send),
+          FilesList(filesList: files, onDismissed: peer!.deleteFile),
+          HistoryList(filesList: sendingFiles, onCancel: peer!.cancelOperation),
         ],
       ),
       drawer: CustomDrawer(peer: peer!),
@@ -99,10 +99,4 @@ class HomePageState extends State<HomePage>
   //     }
   //   }
   // }
-
-  void updateFloatWidget(Widget newWidget) {
-    setState(() {
-      floatWidget = newWidget;
-    });
-  }
 }

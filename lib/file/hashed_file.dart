@@ -13,13 +13,17 @@ class HashedFile {
       throw Exception('Файл не найден: $filePath');
     }
 
-    final input = file.openRead();
-    final hash = await sha256.bind(input).first;
-    final hashString = hash.toString();
+    final hash = await getFileHash(file);
 
     print("Путь к файлу: $filePath");
-    print("Хэш файла: $hashString");
+    print("Хэш файла: $hash");
 
-    return HashedFile._(path: filePath, hash: hashString);
+    return HashedFile._(path: filePath, hash: hash);
   }
+}
+
+Future<String> getFileHash(File file) async {
+  final input = file.openRead();
+  final hash = await sha256.bind(input).first;
+  return hash.toString();
 }

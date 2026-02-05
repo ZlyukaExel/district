@@ -47,7 +47,7 @@ class MyTaskHandler extends TaskHandler {
         notificationText: 'Connected peers: ${intData}',
       );
     } else {
-      _udpTransport?.onDataRecieved(data);
+      _udpTransport?.onDataFromPeerRecieved(data);
     }
   }
 

@@ -1,6 +1,6 @@
 import 'package:district/dialog/download_file.dart';
 import 'package:district/dialog/upload_file.dart';
-import 'package:district/peer/peer.dart';
+import 'package:district/client/peer.dart';
 import 'package:flutter/material.dart';
 
 class FileButtons extends StatelessWidget {
