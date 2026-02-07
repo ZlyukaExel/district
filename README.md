@@ -3,9 +3,12 @@
 A simple, cross-platform file sharing app using UDP over LAN.
 
 ## Interface
-![files_menu](https://github.com/ZlyukaExel/district/blob/master/screenshots/files_menu_example.jpg)
-
-![history_menu](https://github.com/ZlyukaExel/district/blob/master/screenshots/history_menu_example.jpg)
+<table>
+  <tr>
+    <td><img src="https://github.com/ZlyukaExel/district/blob/master/screenshots/files_menu_example.jpg" alt="files_menu" width="300"></td>
+    <td><img src="https://github.com/ZlyukaExel/district/blob/master/screenshots/history_menu_example.jpg" alt="history_menu" width="300"></td>
+  </tr>
+</table>
 
 ## Features
 * File Sharing: Share files quickly over LAN using UDP
