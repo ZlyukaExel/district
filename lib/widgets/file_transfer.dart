@@ -22,9 +22,7 @@ class _FileTransferWidgetState extends State<FileTransferWidget> {
   Widget build(BuildContext context) {
     // Cancel
     if (widget.file.progress < -2 + eps) {
-      Widget cancel = _cancelWidget();
-      print('Filename: ${widget.file.fileName}');
-      return cancel;
+      return _cancelWidget();
     }
     // Error
     if (widget.file.progress < -1 + eps) {
@@ -41,7 +39,7 @@ class _FileTransferWidgetState extends State<FileTransferWidget> {
   Widget _progressWidget() {
     return Container(
       padding: const EdgeInsets.all(12.0),
-      margin: const EdgeInsets.symmetric(vertical: 4.0),
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4.0),
       decoration: BoxDecoration(
         color: Colors.grey[100],
         borderRadius: BorderRadius.circular(8.0),
@@ -133,7 +131,7 @@ class _FileTransferWidgetState extends State<FileTransferWidget> {
   Widget _successWidget() {
     return Container(
       padding: const EdgeInsets.all(12.0),
-      margin: const EdgeInsets.symmetric(vertical: 4.0),
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4.0),
       decoration: BoxDecoration(
         color: Colors.green[50],
         borderRadius: BorderRadius.circular(8.0),
@@ -168,7 +166,7 @@ class _FileTransferWidgetState extends State<FileTransferWidget> {
   Widget _errorWidget() {
     return Container(
       padding: const EdgeInsets.all(12.0),
-      margin: const EdgeInsets.symmetric(vertical: 4.0),
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4.0),
       decoration: BoxDecoration(
         color: Colors.red[50],
         borderRadius: BorderRadius.circular(8.0),
@@ -199,7 +197,7 @@ class _FileTransferWidgetState extends State<FileTransferWidget> {
   Widget _cancelWidget() {
     return Container(
       padding: const EdgeInsets.all(12.0),
-      margin: const EdgeInsets.symmetric(vertical: 4.0),
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4.0),
       decoration: BoxDecoration(
         color: Colors.grey[200],
         borderRadius: BorderRadius.circular(8.0),

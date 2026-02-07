@@ -57,7 +57,7 @@ class FileListItem extends StatelessWidget {
                 children: [
                   Expanded(
                     child: Text(
-                      'Хэш-ключ: ${file.hash}',
+                      'Hash-key: ${file.hash}',
                       style: const TextStyle(fontSize: 12, color: Colors.grey),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -73,9 +73,7 @@ class FileListItem extends StatelessWidget {
                       // Типа тост
                       if (!context.mounted) return;
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Скопировано в буфер обмена'),
-                        ),
+                        const SnackBar(content: Text('Copied to buffer')),
                       );
                     },
                   ),

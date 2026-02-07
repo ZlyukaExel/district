@@ -64,13 +64,13 @@ class _CustomDrawerState extends State<CustomDrawer> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              "Настройки",
+              "Settings",
               style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 24),
 
             const Text(
-              "Папка для загрузок",
+              "Save to",
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 8),
@@ -83,14 +83,14 @@ class _CustomDrawerState extends State<CustomDrawer> {
                     readOnly: true,
                     decoration: const InputDecoration(
                       border: OutlineInputBorder(),
-                      hintText: 'Выберите папку...',
+                      hintText: 'Select a directory',
                     ),
                   ),
                 ),
                 const SizedBox(width: 8),
                 ElevatedButton(
                   onPressed: _pickDirectory,
-                  child: const Text("Выбрать"),
+                  child: const Text("Change"),
                 ),
               ],
             ),
@@ -105,7 +105,7 @@ class _CustomDrawerState extends State<CustomDrawer> {
                     if (v != null) _toggleVisible(v);
                   },
                 ),
-                const Text("Узел видим"),
+                const Text("Peer visible"),
               ],
             ),
           ],

@@ -1,4 +1,4 @@
-package com.example.district
+package com.wispandco.district
 
 import io.flutter.embedding.android.FlutterActivity
 

@@ -16,17 +16,13 @@ class ClientInfo {
 
   /// Загрузка настроек из SharedPreferences
   static Future<ClientInfo> load(String id) async {
-    final defaultDir = 'Загрузки';
+    final defaultDir = 'Downloads';
 
     final dir = await Preferences.getString(_dirKey, defaultDir);
     final visibleStr = await Preferences.getString(_visibleKey, 'true');
     final visible = visibleStr.toLowerCase() == 'true';
 
-    return ClientInfo(
-      id: id,
-      downloadDirectory: dir,
-      isVisible: visible,
-    );
+    return ClientInfo(id: id, downloadDirectory: dir, isVisible: visible);
   }
 
   /// Сохранение настроек в SharedPreferences
@@ -36,7 +32,8 @@ class ClientInfo {
   }
 
   @override
-  String toString() => 'ClientInfo('
+  String toString() =>
+      'ClientInfo('
       'id: $id, '
       'downloadDirectory: $downloadDirectory, '
       'isVisible: $isVisible)';

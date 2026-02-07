@@ -15,14 +15,14 @@ class FileButtons extends StatelessWidget {
       children: [
         FloatingActionButton(
           heroTag: "uploadButton",
-          tooltip: "Выложить файл",
+          tooltip: "Upload file",
           onPressed: () => uploadFiles(peer),
           child: Icon(Icons.upload),
         ),
         SizedBox(height: 10),
         FloatingActionButton(
           heroTag: "downloadButton",
-          tooltip: "Скачать файл",
+          tooltip: "Download file",
           onPressed: () => showHashInputDialog(context, peer.requestFile),
           child: Icon(Icons.download),
         ),

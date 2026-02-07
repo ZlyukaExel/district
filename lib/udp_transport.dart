@@ -146,8 +146,14 @@ class UdpTransport {
         }
       }
 
+      // While waiting, operation can be cancelled
+      if (!_sendingFiles.contains(transferId)) {
+        return;
+      }
+
       if (sent) {
         i++;
+        // Update progress
         final json = {
           'transferId': transferId,
           'name': chunk.fileName,
@@ -162,7 +168,7 @@ class UdpTransport {
         return;
       }
     }
-    print("File send successfully");
+    print("File was succesfully sent");
     sendToPeer('File was succesfully sent');
     endOperation(transferId, 1);
     _sendingFiles.remove(transferId);

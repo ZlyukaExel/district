@@ -28,7 +28,7 @@ class Peer {
   static const int K = 20;
   static const int _alpha = 3;
   late final BuildContext _context;
-  late BloomFilter _bloomFilter;
+  late BloomFilter _bloomFilter = BloomFilter(size: 50000, numHashes: 3);
   final HashTable<String, String> _fileMetadata = HashTable<String, String>();
   late final NotifierList<HashedFile> _files;
   late final NotifierList<SendingFile> _sendingFiles;
